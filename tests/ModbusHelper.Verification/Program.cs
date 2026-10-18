@@ -1,9 +1,23 @@
+using System.Net;
+using System.Net.Sockets;
+using System.Collections.Concurrent;
+using ModbusHelper.Business.ByteOrder;
 using ModbusHelper.Business.Configuration;
+using ModbusHelper.Business.Connections;
+using ModbusHelper.Business.Data;
+using ModbusHelper.Business.Logging;
+using ModbusHelper.Business.Polling;
+using ModbusHelper.Business.Statistics;
+using ModbusHelper.Business.Trends;
 using ModbusHelper.Communication.Exceptions;
+using ModbusHelper.Communication.Capturing;
+using ModbusHelper.Communication.Masters;
+using ModbusHelper.Communication.Slaves;
 using ModbusHelper.Communication.Validation;
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Exceptions;
+using ModbusHelper.Core.Models;
 using ModbusHelper.Core.Protocol;
 
 int passed = 0;
@@ -15,6 +29,13 @@ await RunAsync("写数量边界", TestWriteLimits);
 await RunAsync("从站地址规则", TestUnitIdRules);
 await RunAsync("异常码中文映射", TestExceptionCodeMap);
 await RunAsync("异常转换", TestExceptionTranslation);
+await RunAsync("帧日志解析", TestFrameCaptureLogger);
+await RunAsync("寄存器四种布局", TestRegisterByteOrders);
+await RunAsync("寄存器往返编码", TestRegisterRoundTrip);
+await RunAsync("CSV 转义与 BOM", TestCsvExport);
+await RunAsync("SPSC 环形缓冲区", TestSpscRingBuffer);
+await RunAsync("通信统计", TestStatistics);
+await RunAsync("TCP 主从自环", TestTcpSelfLoop);
 await RunAsync("配置保存与加载", TestConfigurationRoundTrip);
 
 Console.WriteLine();
@@ -130,6 +151,384 @@ static Task TestExceptionTranslation()
     return Task.CompletedTask;
 }
 
+static Task TestFrameCaptureLogger()
+{
+    FrameCaptureLogger logger = new(ModbusRole.Slave, false);
+    RawFrameRecord? captured = null;
+    logger.FrameCaptured += frame => captured = frame;
+    logger.Log(
+        NModbus.LoggingLevel.Information,
+        "TX to Master at 127.0.0.1:502: 0, 1, 0, 0, 0, 5, 1, 3, 2, 0, 1");
+    True(captured is not null, "TCP 从站发送帧未被解析。");
+    Equal("00 01 00 00 00 05 01 03 02 00 01", captured!.Hex);
+    return Task.CompletedTask;
+}
+
+static Task TestRegisterByteOrders()
+{
+    ushort[] registers = { 0x1234, 0x5678 };
+    Equal(0x12345678u, (uint)RegisterCodec.Decode(
+        registers,
+        DataValueType.UInt32,
+        RegisterByteOrder.ABCD));
+    Equal(0x56781234u, (uint)RegisterCodec.Decode(
+        registers,
+        DataValueType.UInt32,
+        RegisterByteOrder.CDAB));
+    Equal(0x34127856u, (uint)RegisterCodec.Decode(
+        registers,
+        DataValueType.UInt32,
+        RegisterByteOrder.BADC));
+    Equal(0x78563412u, (uint)RegisterCodec.Decode(
+        registers,
+        DataValueType.UInt32,
+        RegisterByteOrder.DCBA));
+    return Task.CompletedTask;
+}
+
+static Task TestRegisterRoundTrip()
+{
+    foreach (RegisterByteOrder order in Enum.GetValues<RegisterByteOrder>())
+    {
+        float expected = 123.456f;
+        ushort[] registers = RegisterCodec.Encode(expected, DataValueType.Float, order);
+        float actual = (float)RegisterCodec.Decode(registers, DataValueType.Float, order);
+        Equal(expected, actual);
+    }
+
+    ushort[] textRegisters = RegisterCodec.Encode(
+        "工业调试",
+        DataValueType.Utf8,
+        RegisterByteOrder.BADC);
+    Equal(
+        "工业调试",
+        (string)RegisterCodec.Decode(
+            textRegisters,
+            DataValueType.Utf8,
+            RegisterByteOrder.BADC));
+    return Task.CompletedTask;
+}
+
+static async Task TestCsvExport()
+{
+    Equal("\"a,b\"", ModbusLogService.EscapeCsvField("a,b"));
+    Equal("\"a\"\"b\"", ModbusLogService.EscapeCsvField("a\"b"));
+    Equal("\"第一行\r\n第二行\"", ModbusLogService.EscapeCsvField("第一行\r\n第二行"));
+
+    string path = Path.Combine(Path.GetTempPath(), $"modbus-log-{Guid.NewGuid():N}.csv");
+    try
+    {
+        ModbusLogService log = new();
+        log.AddMessage(ModbusLogLevel.Info, "含逗号,和\"引号\"");
+        await log.ExportCsvAsync(path);
+        byte[] bytes = await File.ReadAllBytesAsync(path);
+        True(bytes.Length > 3);
+        Equal((byte)0xEF, bytes[0]);
+        Equal((byte)0xBB, bytes[1]);
+        Equal((byte)0xBF, bytes[2]);
+    }
+    finally
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+}
+
+static async Task TestSpscRingBuffer()
+{
+    SpscRingBuffer<TestSample> buffer = new(128);
+    const int total = 50_000;
+    long cursor = 0;
+    int observed = 0;
+
+    Task producer = Task.Run(() =>
+    {
+        for (int index = 1; index <= total; index++)
+        {
+            buffer.Write(new TestSample(index, index * 1.5));
+        }
+    });
+
+    Task consumer = Task.Run(() =>
+    {
+        while (!producer.IsCompleted)
+        {
+            cursor = buffer.ReadAfter(cursor, out TestSample[] values);
+            foreach (TestSample value in values)
+            {
+                True(value.Value == value.Sequence * 1.5, "读取到撕裂数据。");
+                observed++;
+            }
+        }
+    });
+
+    await Task.WhenAll(producer, consumer);
+    cursor = buffer.ReadAfter(cursor, out TestSample[] remaining);
+    foreach (TestSample value in remaining)
+    {
+        True(value.Value == value.Sequence * 1.5, "最终快照存在撕裂数据。");
+        observed++;
+    }
+
+    True(observed > 0);
+    Equal((long)total, buffer.LatestSequence);
+}
+
+static Task TestStatistics()
+{
+    CommunicationStatistics statistics = new();
+    statistics.RecordFrame(new RawFrameRecord(
+        DateTimeOffset.Now,
+        ModbusRole.Master,
+        DataDirection.Tx,
+        "01 03 00 00 00 01",
+        "主站发送",
+        true));
+    statistics.RecordFrame(new RawFrameRecord(
+        DateTimeOffset.Now,
+        ModbusRole.Master,
+        DataDirection.Rx,
+        "01 03 02 00 01",
+        "主站接收",
+        true));
+    statistics.RecordOperation(12, null);
+    statistics.RecordOperation(20, CommunicationErrorKind.Timeout);
+    CommunicationStatisticsSnapshot snapshot = statistics.GetSnapshot();
+    Equal(1L, snapshot.Requests);
+    Equal(1L, snapshot.Responses);
+    Equal(2L, snapshot.Operations);
+    Equal(1L, snapshot.Errors);
+    Equal(1L, snapshot.Timeouts);
+    Equal(16d, snapshot.AverageDurationMilliseconds);
+    return Task.CompletedTask;
+}
+
+static async Task TestTcpSelfLoop()
+{
+    int port = GetFreeTcpPort();
+    string id = Guid.NewGuid().ToString("N")[..8];
+    SlaveSimulationConfiguration slaveConfiguration = new()
+    {
+        Type = ConnectionType.Tcp,
+        Tcp = new TcpSlaveConfiguration
+        {
+            ListenAddress = "127.0.0.1",
+            Port = port
+        },
+        Units =
+        {
+            new SlaveUnitConfiguration
+            {
+                UnitId = 1,
+                HoldingRegisters = Enumerable.Range(0, 125)
+                    .Select(index => new RegisterInitialValue
+                    {
+                        Address = (ushort)index,
+                        Value = (ushort)(1000 + index)
+                    })
+                    .ToList(),
+                InputRegisters =
+                {
+                    new RegisterInitialValue { Address = 0, Value = 2222 }
+                },
+                Coils =
+                {
+                    new CoilInitialValue { Address = 0, Value = true },
+                    new CoilInitialValue { Address = 1, Value = false },
+                    new CoilInitialValue { Address = 2, Value = true }
+                },
+                DiscreteInputs =
+                {
+                    new CoilInitialValue { Address = 0, Value = true }
+                }
+            },
+            new SlaveUnitConfiguration
+            {
+                UnitId = 2,
+                HoldingRegisters =
+                {
+                    new RegisterInitialValue { Address = 0, Value = 7777 }
+                }
+            }
+        }
+    };
+
+    await using ModbusSlaveSimulator simulator = new(slaveConfiguration);
+    int slaveFrames = 0;
+    simulator.FrameCaptured += _ => Interlocked.Increment(ref slaveFrames);
+    await simulator.StartAsync(slaveConfiguration);
+    await Task.Delay(150);
+
+    ConnectionConfiguration masterConfiguration = new()
+    {
+        Name = $"自环-{id}",
+        Type = ConnectionType.Tcp,
+        Tcp = new TcpConnectionConfiguration
+        {
+            Host = "127.0.0.1",
+            Port = port,
+            ConnectTimeoutMilliseconds = 3000
+        },
+        TransportTimeoutMilliseconds = 1000,
+        ApplicationResponseTimeoutMilliseconds = 1500,
+        RetryCount = 0
+    };
+
+    using ModbusService service = new(masterConfiguration);
+    int masterFrames = 0;
+    service.FrameCaptured += _ => Interlocked.Increment(ref masterFrames);
+    await service.ConnectAsync();
+
+    ModbusOperationResult registers = await service.ReadHoldingRegistersAsync(1, 0, 125);
+    Equal(125, registers.Registers?.Length ?? -1);
+    Equal((ushort)1000, registers.Registers![0]);
+    Equal((ushort)1124, registers.Registers[124]);
+    True(registers.RequestHex.Length > 0, "主站请求报文未采集。");
+    True(registers.ResponseHex.Length > 0, "主站响应报文未采集。");
+
+    try
+    {
+        await service.ReadHoldingRegistersAsync(1, 0, 126);
+        throw new InvalidOperationException("126 个寄存器应被参数校验拦截。");
+    }
+    catch (ModbusCommunicationException exception)
+    {
+        Equal(CommunicationErrorKind.Validation, exception.ErrorKind);
+    }
+
+    ModbusOperationResult coils = await service.ReadCoilsAsync(1, 0, 3);
+    Equal(3, coils.Coils?.Length ?? -1);
+    True(coils.Coils![0], "线圈地址 0 应为真。");
+    False(coils.Coils[1], "线圈地址 1 应为假。");
+    True(coils.Coils[2], "线圈地址 2 应为真。");
+
+    await service.WriteSingleRegisterAsync(1, 10, 4321);
+    ModbusOperationResult writtenRegister = await service.ReadHoldingRegistersAsync(1, 10, 1);
+    Equal((ushort)4321, writtenRegister.Registers![0]);
+
+    ushort[] expectedBlock = { 11, 22, 33 };
+    await service.WriteMultipleRegistersAsync(1, 20, expectedBlock);
+    ModbusOperationResult writtenBlock = await service.ReadHoldingRegistersAsync(1, 20, 3);
+    True(writtenBlock.Registers!.SequenceEqual(expectedBlock), "多寄存器写入结果不一致。");
+
+    bool[] expectedCoils = { true, false, true, true };
+    await service.WriteMultipleCoilsAsync(1, 5, expectedCoils);
+    ModbusOperationResult writtenCoils = await service.ReadCoilsAsync(1, 5, 4);
+    True(writtenCoils.Coils!.SequenceEqual(expectedCoils), "多线圈写入结果不一致。");
+
+    ModbusOperationResult unit2 = await service.ReadHoldingRegistersAsync(2, 0, 1);
+    Equal((ushort)7777, unit2.Registers![0]);
+
+    slaveConfiguration.Units[0].ExceptionRules.Add(new ExceptionInjectionRule
+    {
+        UnitId = 1,
+        Function = ModbusFunction.ReadHoldingRegisters,
+        StartAddress = 50,
+        Count = 1,
+        ExceptionCode = 2
+    });
+    simulator.UpdateExceptionRules(slaveConfiguration.Units[0].ExceptionRules);
+    try
+    {
+        await service.ReadHoldingRegistersAsync(1, 50, 1);
+        throw new InvalidOperationException("异常注入规则未生效。");
+    }
+    catch (ModbusCommunicationException exception)
+    {
+        Equal(CommunicationErrorKind.SlaveException, exception.ErrorKind);
+        True(exception.ModbusExceptionCode == 2);
+        True(string.Equals(
+            "非法数据地址",
+            exception.ModbusExceptionMeaning,
+            StringComparison.Ordinal));
+        True(exception.GetDisplayMessage().Contains("非法数据地址", StringComparison.Ordinal));
+    }
+
+    True(masterFrames >= 10, $"主站报文数不足，实际 {masterFrames}。");
+    True(slaveFrames >= 10, $"从站报文数不足，实际 {slaveFrames}。");
+    await service.DisconnectAsync();
+    Equal(ConnectionState.Disconnected, service.State);
+    await service.ConnectAsync();
+    ModbusOperationResult reconnectResult = await service.ReadHoldingRegistersAsync(1, 0, 1);
+    Equal((ushort)1000, reconnectResult.Registers![0]);
+    await service.DisconnectAsync();
+    service.Dispose();
+
+    ModbusLogService logService = new();
+    await using ConnectionManager connectionManager = new(logService);
+    await connectionManager.ConnectAsync(masterConfiguration);
+    TrendDataStore trendStore = new();
+    await using PollingScheduler scheduler = new(connectionManager, trendStore, logService);
+    ConcurrentDictionary<string, int> sampleCounts = new();
+    scheduler.SampleReceived += (_, args) =>
+        sampleCounts.AddOrUpdate(args.Task.Id, 1, (_, count) => count + 1);
+
+    PollingTaskConfiguration task1 = new()
+    {
+        Id = $"task-{id}-1",
+        Name = "寄存器轮询",
+        Function = ModbusFunction.ReadHoldingRegisters,
+        UnitId = 1,
+        StartAddress = 0,
+        Count = 1,
+        IntervalMilliseconds = 100,
+        DataType = DataValueType.UInt16,
+        ShowInTrend = true
+    };
+    PollingTaskConfiguration task2 = new()
+    {
+        Id = $"task-{id}-2",
+        Name = "线圈轮询",
+        Function = ModbusFunction.ReadCoils,
+        UnitId = 1,
+        StartAddress = 0,
+        Count = 3,
+        IntervalMilliseconds = 100,
+        ShowInTrend = true
+    };
+    await scheduler.StartEnabledAsync(new[] { task1, task2 });
+    await Task.Delay(650);
+    await scheduler.StopAllAsync();
+    True(sampleCounts.GetValueOrDefault(task1.Id) >= 3, "并行轮询任务 1 采样不足。");
+    True(sampleCounts.GetValueOrDefault(task2.Id) >= 3, "并行轮询任务 2 采样不足。");
+    True(trendStore.Get(task1.Id)!.LatestSequence >= 3, "趋势任务 1 未收到数据。");
+    True(trendStore.Get(task2.Id)!.LatestSequence >= 3, "趋势任务 2 未收到数据。");
+
+    await connectionManager.WriteAsync(
+        ModbusFunction.WriteMultipleRegisters,
+        1,
+        100,
+        Array.Empty<bool>(),
+        new ushort[] { 0x1234, 0x5678 });
+    ByteOrderProbeService probeService = new(connectionManager);
+    const uint expectedCdab = 0x56781234;
+    ByteOrderProbeReport probeReport = await probeService.ProbeAsync(
+        1,
+        100,
+        DataValueType.UInt32,
+        expectedCdab,
+        expectedCdab);
+    True(probeReport.RecommendedByteOrder == RegisterByteOrder.CDAB);
+    AppConfiguration probeConfiguration = new();
+    ByteOrderProbeService.Apply(
+        probeConfiguration,
+        probeReport,
+        RegisterByteOrder.ABCD);
+    Equal(RegisterByteOrder.CDAB, probeConfiguration.Parsing.ByteOrder);
+    await connectionManager.DisconnectAsync();
+}
+
+static int GetFreeTcpPort()
+{
+    TcpListener listener = new(IPAddress.Loopback, 0);
+    listener.Start();
+    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+    listener.Stop();
+    return port;
+}
+
 static async Task TestConfigurationRoundTrip()
 {
     string directory = Path.Combine(Path.GetTempPath(), "ModbusHelperVerification");
@@ -195,3 +594,5 @@ static void Equal<T>(T expected, T actual)
         throw new InvalidOperationException($"期望 {expected}，实际 {actual}。");
     }
 }
+
+internal readonly record struct TestSample(long Sequence, double Value);
