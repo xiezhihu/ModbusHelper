@@ -301,6 +301,7 @@ public sealed class PollingScheduler : IAsyncDisposable
         }
 
         runtime.Configuration.IsRunning = false;
+        PublishState(runtime, PollingTaskState.Stopped, "轮询任务已停止");
     }
 
     private void PublishState(
@@ -310,6 +311,11 @@ public sealed class PollingScheduler : IAsyncDisposable
     {
         if (state != PollingTaskState.Running)
         {
+            if (!runtime.TryMarkTerminalStatePublished())
+            {
+                return;
+            }
+
             runtime.Configuration.IsRunning = false;
             lock (_syncRoot)
             {
@@ -423,5 +429,12 @@ public sealed class PollingScheduler : IAsyncDisposable
         public Task Execution { get; set; } = Task.CompletedTask;
 
         public Task Completion => Execution;
+
+        private int _terminalStatePublished;
+
+        public bool TryMarkTerminalStatePublished()
+        {
+            return Interlocked.Exchange(ref _terminalStatePublished, 1) == 0;
+        }
     }
 }

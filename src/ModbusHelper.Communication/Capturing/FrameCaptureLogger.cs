@@ -15,7 +15,7 @@ namespace ModbusHelper.Communication.Capturing;
 public sealed class FrameCaptureLogger : IModbusLogger
 {
     private static readonly char[] PayloadSeparators = { ' ', ',' };
-    private readonly bool _usesCrc;
+    private bool _usesCrc;
 
     /// <summary>
     /// 初始化帧采集日志器。
@@ -30,6 +30,15 @@ public sealed class FrameCaptureLogger : IModbusLogger
 
     /// <summary>当前日志器所属角色。</summary>
     public ModbusRole Role { get; }
+
+    /// <summary>
+    /// 在监听启动前设置当前传输是否使用 RTU CRC。停止状态下不会与报文解析并发。
+    /// </summary>
+    /// <param name="usesCrc">RTU 传输时为真。</param>
+    public void SetUsesCrc(bool usesCrc)
+    {
+        _usesCrc = usesCrc;
+    }
 
     /// <summary>采集到完整报文时触发。</summary>
     public event Action<RawFrameRecord>? FrameCaptured;

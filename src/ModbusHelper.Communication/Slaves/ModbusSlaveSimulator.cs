@@ -89,6 +89,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
         lock (_syncRoot)
         {
             _configuration = configuration;
+            _frameLogger.SetUsesCrc(configuration.Type == ConnectionType.Rtu);
             _ruleProvider.Update(
                 configuration.Units.SelectMany(unit => unit.ExceptionRules));
             _dataStores.Clear();

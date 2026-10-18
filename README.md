@@ -63,7 +63,14 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-layer-boundaries.ps1
 
 验证控制台覆盖配置往返、参数边界、四种布局、CRC/CSV 规则、SPSC 并发、五任务轮询、TCP 主从自环、异常码 02、重连和两层超时。UI 冒烟覆盖五个页签、五曲线、手动读取和字节序探测窗体。
 
-RTU 最终验收仍需要 com0com 虚拟串口对或实际串口设备。
+RTU 虚拟串口专项验收：
+
+```powershell
+dotnet run --project tests/ModbusHelper.Verification/ModbusHelper.Verification.csproj -- --rtu COM1 COM2
+dotnet run --project tests/ModbusHelper.UiSmoke/ModbusHelper.UiSmoke.csproj -- --rtu COM1 COM2
+```
+
+第一个参数为主站串口，第二个参数为从站串口。
 
 ## 文档
 

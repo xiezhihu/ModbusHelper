@@ -12,8 +12,18 @@ namespace ModbusHelper.UiSmoke;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
+        int rtuArgumentIndex = Array.FindIndex(
+            args,
+            argument => string.Equals(argument, "--rtu", StringComparison.OrdinalIgnoreCase));
+        bool useRtu = rtuArgumentIndex >= 0;
+        string masterPort = useRtu && args.Length > rtuArgumentIndex + 2
+            ? args[rtuArgumentIndex + 1]
+            : "COM1";
+        string slavePort = useRtu && args.Length > rtuArgumentIndex + 2
+            ? args[rtuArgumentIndex + 2]
+            : "COM2";
         string testConfigurationPath = Path.Combine(
             Path.GetTempPath(),
             $"modbus-helper-ui-smoke-{Guid.NewGuid():N}.json");
@@ -51,7 +61,13 @@ internal static class Program
         }
 
         CheckLayout(tabs);
-        RunSelfLoopInteraction(form, tabs, outputDirectory);
+        RunSelfLoopInteraction(
+            form,
+            tabs,
+            outputDirectory,
+            useRtu,
+            masterPort,
+            slavePort);
         form.Close();
         Pump(TimeSpan.FromSeconds(2));
         if (File.Exists(testConfigurationPath))
@@ -59,34 +75,58 @@ internal static class Program
             File.Delete(testConfigurationPath);
         }
 
-        Console.WriteLine("界面冒烟检查通过。");
+        Console.WriteLine(useRtu
+            ? $"界面 RTU 自环检查通过（{masterPort}/{slavePort}）。"
+            : "界面 TCP 自环检查通过。");
     }
 
     private static void RunSelfLoopInteraction(
         Form form,
         TabControl tabs,
-        string outputDirectory)
+        string outputDirectory,
+        bool useRtu,
+        string masterPortName,
+        string slavePortName)
     {
-        int port = GetFreeTcpPort();
-        NumericUpDown slavePort = GetField<NumericUpDown>(form, "_slaveListenPortInput");
         Button slaveStart = GetField<Button>(form, "_slaveStartButton");
         Label slaveState = GetField<Label>(form, "_slaveStateLabel");
+        int port = 0;
         tabs.SelectedIndex = 2;
-        slavePort.Value = port;
+        if (useRtu)
+        {
+            SelectComboByText(GetField<ComboBox>(form, "_slaveTypeCombo"), "RTU");
+            SelectComboPort(
+                GetField<ComboBox>(form, "_slaveSerialPortCombo"),
+                slavePortName);
+        }
+        else
+        {
+            port = GetFreeTcpPort();
+            GetField<NumericUpDown>(form, "_slaveListenPortInput").Value = port;
+        }
+
         slaveStart.PerformClick();
-        Pump(TimeSpan.FromMilliseconds(600));
+        Pump(TimeSpan.FromMilliseconds(800));
         if (!slaveState.Text.Contains("监听", StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"从站未进入监听状态：{slaveState.Text}");
         }
 
-        NumericUpDown masterPort = GetField<NumericUpDown>(form, "_tcpPortInput");
         Button connect = GetField<Button>(form, "_connectButton");
         Label headerStatus = GetField<Label>(form, "_headerStatusLabel");
         tabs.SelectedIndex = 0;
-        masterPort.Value = port;
+        if (useRtu)
+        {
+            SelectComboByText(GetField<ComboBox>(form, "_connectionTypeCombo"), "RTU");
+            SelectComboPort(GetField<ComboBox>(form, "_serialPortCombo"), masterPortName);
+        }
+        else
+        {
+            GetField<NumericUpDown>(form, "_tcpPortInput").Value = port;
+        }
+
         connect.PerformClick();
-        Pump(TimeSpan.FromMilliseconds(650));
+        Pump(TimeSpan.FromMilliseconds(900));
         if (headerStatus.Text != "已连接")
         {
             throw new InvalidOperationException($"主站未连接：{headerStatus.Text}");
@@ -100,7 +140,7 @@ internal static class Program
             tasks[0].ShowInTrend = true;
         }
 
-        for (int index = 1; index < 5; index++)
+        for (int index = 1; index < (useRtu ? 1 : 5); index++)
         {
             tasks.Add(new PollingTaskConfiguration
             {
@@ -128,14 +168,14 @@ internal static class Program
         Button startAll = FindButton(tabs, "启动全部")
             ?? throw new InvalidOperationException("未找到启动全部按钮。");
         startAll.PerformClick();
-        Pump(TimeSpan.FromMilliseconds(700));
+        Pump(TimeSpan.FromMilliseconds(useRtu ? 1200 : 700));
 
         tabs.SelectedIndex = 0;
         Button execute = GetField<Button>(form, "_executeManualButton");
         TextBox request = GetField<TextBox>(form, "_requestHexBox");
         TextBox response = GetField<TextBox>(form, "_responseHexBox");
         execute.PerformClick();
-        Pump(TimeSpan.FromMilliseconds(650));
+        Pump(TimeSpan.FromMilliseconds(800));
         if (string.IsNullOrWhiteSpace(request.Text) || string.IsNullOrWhiteSpace(response.Text))
         {
             throw new InvalidOperationException("界面手动读取未收到完整请求和响应报文。");
@@ -290,6 +330,32 @@ internal static class Program
         }
 
         return null;
+    }
+
+    private static void SelectComboByText(ComboBox comboBox, string text)
+    {
+        for (int index = 0; index < comboBox.Items.Count; index++)
+        {
+            if (comboBox.Items[index]?.ToString()?.Contains(
+                    text,
+                    StringComparison.OrdinalIgnoreCase) == true)
+            {
+                comboBox.SelectedIndex = index;
+                return;
+            }
+        }
+
+        throw new InvalidOperationException($"下拉框中未找到“{text}”。");
+    }
+
+    private static void SelectComboPort(ComboBox comboBox, string portName)
+    {
+        if (!comboBox.Items.Contains(portName))
+        {
+            comboBox.Items.Add(portName);
+        }
+
+        comboBox.SelectedItem = portName;
     }
 
     private static void Pump(TimeSpan duration)

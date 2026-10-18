@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Ports;
 using System.Net;
 using System.Net.Sockets;
 
@@ -38,6 +39,25 @@ await RunAsync("SPSC 环形缓冲区", TestSpscRingBuffer);
 await RunAsync("通信统计", TestStatistics);
 await RunAsync("TCP 主从自环", TestTcpSelfLoop);
 await RunAsync("两层超时", TestTimeoutLayers);
+int rtuArgumentIndex = Array.FindIndex(
+    args,
+    argument => string.Equals(argument, "--rtu", StringComparison.OrdinalIgnoreCase));
+if (rtuArgumentIndex >= 0)
+{
+    string masterPort = args.Length > rtuArgumentIndex + 2
+        ? args[rtuArgumentIndex + 1]
+        : "COM1";
+    string slavePort = args.Length > rtuArgumentIndex + 2
+        ? args[rtuArgumentIndex + 2]
+        : "COM2";
+    await RunAsync(
+        $"RTU 主从自环（{masterPort}/{slavePort}）",
+        () => TestRtuSelfLoop(masterPort, slavePort));
+}
+else
+{
+    Console.WriteLine("提示：未指定 --rtu COM1 COM2，已跳过 RTU 串口专项验证。");
+}
 await RunAsync("配置保存与加载", TestConfigurationRoundTrip);
 
 Console.WriteLine();
@@ -651,6 +671,247 @@ static async Task VerifyTimeoutAsync(
             // 测试服务器正常取消。
         }
     }
+}
+
+static async Task TestRtuSelfLoop(string masterPortName, string slavePortName)
+{
+    string[] availablePorts = SerialPort.GetPortNames();
+    True(
+        availablePorts.Contains(masterPortName, StringComparer.OrdinalIgnoreCase),
+        $"未找到主站串口 {masterPortName}。");
+    True(
+        availablePorts.Contains(slavePortName, StringComparer.OrdinalIgnoreCase),
+        $"未找到从站串口 {slavePortName}。");
+
+    SlaveSimulationConfiguration slaveConfiguration = new()
+    {
+        Type = ConnectionType.Rtu,
+        Rtu = new RtuConnectionConfiguration
+        {
+            PortName = slavePortName,
+            BaudRate = 9600,
+            DataBits = 8,
+            Parity = SerialParity.None,
+            StopBits = SerialStopBits.One
+        },
+        Units =
+        {
+            new SlaveUnitConfiguration
+            {
+                UnitId = 1,
+                HoldingRegisters = Enumerable.Range(0, 125)
+                    .Select(index => new RegisterInitialValue
+                    {
+                        Address = (ushort)index,
+                        Value = (ushort)(2000 + index)
+                    })
+                    .ToList(),
+                Coils =
+                {
+                    new CoilInitialValue { Address = 0, Value = true },
+                    new CoilInitialValue { Address = 1, Value = false },
+                    new CoilInitialValue { Address = 2, Value = true }
+                }
+            },
+            new SlaveUnitConfiguration
+            {
+                UnitId = 2,
+                HoldingRegisters =
+                {
+                    new RegisterInitialValue { Address = 0, Value = 8888 }
+                }
+            }
+        }
+    };
+
+    await using ModbusSlaveSimulator simulator = new(slaveConfiguration);
+    ConcurrentBag<RawFrameRecord> slaveFrames = new();
+    simulator.FrameCaptured += slaveFrames.Add;
+    await simulator.StartAsync(slaveConfiguration);
+    await Task.Delay(250);
+
+    ConnectionConfiguration masterConfiguration = new()
+    {
+        Type = ConnectionType.Rtu,
+        Rtu = new RtuConnectionConfiguration
+        {
+            PortName = masterPortName,
+            BaudRate = 9600,
+            DataBits = 8,
+            Parity = SerialParity.None,
+            StopBits = SerialStopBits.One
+        },
+        TransportTimeoutMilliseconds = 1000,
+        ApplicationResponseTimeoutMilliseconds = 2500,
+        RetryCount = 0
+    };
+
+    using ModbusService service = new(masterConfiguration);
+    ConcurrentBag<RawFrameRecord> masterFrames = new();
+    service.FrameCaptured += masterFrames.Add;
+    await service.ConnectAsync();
+
+    ModbusOperationResult registerResult = await service.ReadHoldingRegistersAsync(1, 0, 125);
+    Equal(125, registerResult.Registers?.Length ?? -1);
+    Equal((ushort)2000, registerResult.Registers![0]);
+    Equal((ushort)2124, registerResult.Registers[124]);
+
+    try
+    {
+        await service.ReadHoldingRegistersAsync(1, 0, 126);
+        throw new InvalidOperationException("RTU 读取 126 个寄存器应被参数校验拦截。");
+    }
+    catch (ModbusCommunicationException exception)
+    {
+        Equal(CommunicationErrorKind.Validation, exception.ErrorKind);
+    }
+
+    await service.WriteSingleRegisterAsync(1, 10, 4321);
+    ModbusOperationResult singleRegister = await service.ReadHoldingRegistersAsync(1, 10, 1);
+    Equal((ushort)4321, singleRegister.Registers![0]);
+
+    ushort[] expectedRegisters = { 11, 22, 33 };
+    await service.WriteMultipleRegistersAsync(1, 20, expectedRegisters);
+    ModbusOperationResult multipleRegisters = await service.ReadHoldingRegistersAsync(1, 20, 3);
+    True(multipleRegisters.Registers!.SequenceEqual(expectedRegisters));
+
+    ModbusOperationResult coils = await service.ReadCoilsAsync(1, 0, 3);
+    True(coils.Coils!.SequenceEqual(new[] { true, false, true }));
+
+    ModbusOperationResult unit2 = await service.ReadHoldingRegistersAsync(2, 0, 1);
+    Equal((ushort)8888, unit2.Registers![0]);
+
+    slaveConfiguration.Units[0].ExceptionRules.Add(new ExceptionInjectionRule
+    {
+        UnitId = 1,
+        Function = ModbusFunction.ReadHoldingRegisters,
+        StartAddress = 50,
+        Count = 1,
+        ExceptionCode = 2
+    });
+    simulator.UpdateExceptionRules(slaveConfiguration.Units[0].ExceptionRules);
+    try
+    {
+        await service.ReadHoldingRegistersAsync(1, 50, 1);
+        throw new InvalidOperationException("RTU 异常注入规则未生效。");
+    }
+    catch (ModbusCommunicationException exception)
+    {
+        Equal(CommunicationErrorKind.SlaveException, exception.ErrorKind);
+        True(exception.ModbusExceptionCode == 2);
+        True(string.Equals(
+            "非法数据地址",
+            exception.ModbusExceptionMeaning,
+            StringComparison.Ordinal));
+    }
+
+    True(masterFrames.Count > 10);
+    True(slaveFrames.Count > 10);
+    True(masterFrames.All(frame => frame.ChecksumStatus != false), "主站捕获到 CRC 错误帧。");
+    True(slaveFrames.All(frame => frame.ChecksumStatus != false), "从站捕获到 CRC 错误帧。");
+    True(
+        masterFrames.All(frame =>
+            !frame.Meaning.Contains("短帧", StringComparison.Ordinal)
+            && !frame.Meaning.Contains("功能码 0x", StringComparison.Ordinal)),
+        "主站 RTU 帧含义解析错误。");
+    True(
+        slaveFrames.All(frame =>
+            !frame.Meaning.Contains("短帧", StringComparison.Ordinal)
+            && !frame.Meaning.Contains("功能码 0x", StringComparison.Ordinal)),
+        "从站 RTU 帧含义解析错误。");
+
+    await service.DisconnectAsync();
+    Equal(ConnectionState.Disconnected, service.State);
+    await AssertSerialPortReusableAsync(masterPortName);
+    await service.ConnectAsync();
+    ModbusOperationResult reconnectResult = await service.ReadHoldingRegistersAsync(1, 0, 1);
+    Equal((ushort)2000, reconnectResult.Registers![0]);
+    await service.DisconnectAsync();
+    service.Dispose();
+    await AssertSerialPortReusableAsync(masterPortName);
+
+    await simulator.StopAsync();
+    await AssertSerialPortReusableAsync(slavePortName);
+
+    await simulator.StartAsync(slaveConfiguration);
+    await Task.Delay(250);
+    ModbusLogService logService = new();
+    await using ConnectionManager connectionManager = new(logService);
+    ConnectionConfiguration pollingConfiguration = new()
+    {
+        Type = ConnectionType.Rtu,
+        Rtu = masterConfiguration.Rtu,
+        TransportTimeoutMilliseconds = 400,
+        ApplicationResponseTimeoutMilliseconds = 900,
+        RetryCount = 0
+    };
+    await connectionManager.ConnectAsync(pollingConfiguration);
+    TrendDataStore trendStore = new();
+    await using PollingScheduler scheduler = new(connectionManager, trendStore, logService);
+    TaskCompletionSource sampleReceived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource<PollingTaskState> terminalState =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    TaskCompletionSource<ConnectionState> connectionTerminal =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    scheduler.SampleReceived += (_, _) => sampleReceived.TrySetResult();
+    scheduler.TaskStateChanged += (_, args) =>
+    {
+        if (args.State != PollingTaskState.Running)
+        {
+            terminalState.TrySetResult(args.State);
+        }
+    };
+    connectionManager.StateChanged += (_, args) =>
+    {
+        if (args.State == ConnectionState.Faulted)
+        {
+            connectionTerminal.TrySetResult(args.State);
+        }
+    };
+
+    PollingTaskConfiguration pollingTask = new()
+    {
+        Name = "RTU 断线测试",
+        Function = ModbusFunction.ReadHoldingRegisters,
+        UnitId = 1,
+        StartAddress = 0,
+        Count = 1,
+        IntervalMilliseconds = 100,
+        ShowInTrend = true
+    };
+    scheduler.StartTask(pollingTask);
+    await sampleReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    await simulator.StopAsync();
+    await connectionTerminal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    PollingTaskState stoppedState = await terminalState.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    True(stoppedState is PollingTaskState.Faulted or PollingTaskState.Stopped);
+    False(pollingTask.IsRunning);
+
+    await scheduler.DisposeAsync();
+    await connectionManager.DisposeAsync();
+    await AssertSerialPortReusableAsync(masterPortName);
+    await AssertSerialPortReusableAsync(slavePortName);
+}
+
+static async Task AssertSerialPortReusableAsync(string portName)
+{
+    Exception? lastException = null;
+    for (int attempt = 0; attempt < 10; attempt++)
+    {
+        try
+        {
+            using SerialPort port = new(portName);
+            port.Open();
+            return;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            lastException = exception;
+            await Task.Delay(100);
+        }
+    }
+
+    throw new InvalidOperationException($"{portName} 未被释放。", lastException);
 }
 
 static async Task TestConfigurationRoundTrip()
