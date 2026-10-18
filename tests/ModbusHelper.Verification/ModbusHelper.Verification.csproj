@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ModbusHelper.Core\ModbusHelper.Core.csproj" />
+    <ProjectReference Include="..\..\src\ModbusHelper.Communication\ModbusHelper.Communication.csproj" />
+    <ProjectReference Include="..\..\src\ModbusHelper.Business\ModbusHelper.Business.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
