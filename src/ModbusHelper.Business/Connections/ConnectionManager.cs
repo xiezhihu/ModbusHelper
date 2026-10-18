@@ -3,10 +3,12 @@ using ModbusHelper.Business.Statistics;
 using ModbusHelper.Communication.Capturing;
 using ModbusHelper.Communication.Exceptions;
 using ModbusHelper.Communication.Masters;
+using ModbusHelper.Communication.Validation;
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Exceptions;
 using ModbusHelper.Core.Models;
+using ModbusHelper.Core.Protocol;
 
 namespace ModbusHelper.Business.Connections;
 
@@ -31,7 +33,7 @@ public sealed class ConnectionManager : IAsyncDisposable
     }
 
     /// <summary>连接状态变化。</summary>
-    public event EventHandler<ConnectionStateChangedEventArgs>? StateChanged;
+    public event EventHandler<ConnectionStatusChangedEventArgs>? StateChanged;
 
     /// <summary>完整原始帧通知。</summary>
     public event Action<RawFrameRecord>? FrameCaptured;
@@ -53,6 +55,59 @@ public sealed class ConnectionManager : IAsyncDisposable
 
     /// <summary>通信统计。</summary>
     public CommunicationStatistics Statistics => _statistics;
+
+    /// <summary>
+    /// 校验连接配置。
+    /// </summary>
+    /// <param name="configuration">连接配置。</param>
+    /// <returns>参数校验结果。</returns>
+    public static ValidationResult ValidateConnection(ConnectionConfiguration configuration)
+    {
+        return ConnectionParameterValidator.Validate(configuration);
+    }
+
+    /// <summary>
+    /// 校验读请求并返回警告。
+    /// </summary>
+    /// <param name="function">读取功能码。</param>
+    /// <param name="unitId">从站地址。</param>
+    /// <param name="startAddress">0 基协议地址。</param>
+    /// <param name="count">读取数量。</param>
+    /// <returns>参数校验结果。</returns>
+    public static ValidationResult ValidateReadParameters(
+        ModbusFunction function,
+        byte unitId,
+        ushort startAddress,
+        int count)
+    {
+        ValidationResult result = new();
+        Merge(result, ModbusRequestValidator.ValidateReadUnitId(unitId));
+        Merge(result, ModbusRequestValidator.ValidateReadCount(function, count));
+        Merge(result, ModbusRequestValidator.ValidateAddressRange(startAddress, count));
+        return result;
+    }
+
+    /// <summary>
+    /// 校验写请求并返回 248 至 255 等警告。
+    /// </summary>
+    /// <param name="function">写入功能码。</param>
+    /// <param name="unitId">从站地址。</param>
+    /// <param name="startAddress">0 基协议地址。</param>
+    /// <param name="count">写入数量。</param>
+    /// <returns>参数校验结果。</returns>
+    public ValidationResult ValidateWriteParameters(
+        ModbusFunction function,
+        byte unitId,
+        ushort startAddress,
+        int count)
+    {
+        ConnectionType connectionType = Configuration?.Type ?? ConnectionType.Tcp;
+        ValidationResult result = new();
+        Merge(result, ModbusRequestValidator.ValidateWriteUnitId(unitId, connectionType));
+        Merge(result, ModbusRequestValidator.ValidateWriteCount(function, count));
+        Merge(result, ModbusRequestValidator.ValidateAddressRange(startAddress, count));
+        return result;
+    }
 
     /// <summary>
     /// 建立连接；已有连接会先安全断开。
@@ -224,7 +279,7 @@ public sealed class ConnectionManager : IAsyncDisposable
     private void OnStateChanged(object? sender, ConnectionStateChangedEventArgs args)
     {
         State = args.State;
-        StateChanged?.Invoke(this, args);
+        StateChanged?.Invoke(this, new ConnectionStatusChangedEventArgs(args.State, args.Message));
     }
 
     private void OnFrameCaptured(RawFrameRecord frame)
@@ -238,8 +293,8 @@ public sealed class ConnectionManager : IAsyncDisposable
     {
         ModbusLogLevel level = message.Level switch
         {
-            NModbus.LoggingLevel.Warning => ModbusLogLevel.Warn,
-            NModbus.LoggingLevel.Error or NModbus.LoggingLevel.Critical => ModbusLogLevel.Error,
+            TransportLogLevel.Warning => ModbusLogLevel.Warn,
+            TransportLogLevel.Error or TransportLogLevel.Critical => ModbusLogLevel.Error,
             _ => ModbusLogLevel.Debug
         };
         _logService.AddMessage(level, message.Message, ModbusRole.Master);
@@ -250,6 +305,19 @@ public sealed class ConnectionManager : IAsyncDisposable
         _statistics.RecordOperation(0, exception.ErrorKind);
         _logService.AddCommunicationError(exception);
         CommunicationError?.Invoke(exception);
+    }
+
+    private static void Merge(ValidationResult target, ValidationResult source)
+    {
+        foreach (string error in source.Errors)
+        {
+            target.AddError(error);
+        }
+
+        foreach (string warning in source.Warnings)
+        {
+            target.AddWarning(warning);
+        }
     }
 
     private void ThrowIfDisposed()

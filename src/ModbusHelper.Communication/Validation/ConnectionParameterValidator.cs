@@ -1,4 +1,5 @@
 using System.Net;
+
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Protocol;
@@ -85,6 +86,35 @@ public static class ConnectionParameterValidator
             {
                 result.AddError($"从站 {unit.UnitId}：{error}");
             }
+
+            ValidateInitialValues(unit.HoldingRegisters, $"从站 {unit.UnitId} 保持寄存器", result);
+            ValidateInitialValues(unit.InputRegisters, $"从站 {unit.UnitId} 输入寄存器", result);
+            ValidateInitialValues(unit.Coils, $"从站 {unit.UnitId} 线圈", result);
+            ValidateInitialValues(unit.DiscreteInputs, $"从站 {unit.UnitId} 离散输入", result);
+
+            foreach (ExceptionInjectionRule rule in unit.ExceptionRules)
+            {
+                if (rule.UnitId != unit.UnitId)
+                {
+                    result.AddError(
+                        $"从站 {unit.UnitId} 的异常规则使用了不匹配的从站地址 {rule.UnitId}。");
+                }
+
+                if (!IsSupportedExceptionCode(rule.ExceptionCode))
+                {
+                    result.AddError(
+                        $"从站 {unit.UnitId} 的异常码 0x{rule.ExceptionCode:X2} 不受支持。");
+                }
+
+                if (rule.Count == 0)
+                {
+                    result.AddError($"从站 {unit.UnitId} 的异常规则数量必须大于 0。");
+                }
+                else if (!ModbusAddressConverter.IsRangeValid(rule.StartAddress, rule.Count))
+                {
+                    result.AddError($"从站 {unit.UnitId} 的异常规则地址范围越界。");
+                }
+            }
         }
 
         if (configuration.Type == ConnectionType.Rtu)
@@ -102,6 +132,24 @@ public static class ConnectionParameterValidator
         }
 
         return result;
+    }
+
+    private static void ValidateInitialValues<T>(
+        IReadOnlyCollection<T> values,
+        string areaName,
+        ValidationResult result)
+        where T : notnull
+    {
+        if (values.Count > ushort.MaxValue + 1)
+        {
+            result.AddError($"{areaName}初始值数量超过协议地址空间。");
+        }
+    }
+
+    private static bool IsSupportedExceptionCode(byte exceptionCode)
+    {
+        return exceptionCode is 0x01 or 0x02 or 0x03 or 0x04 or 0x05 or 0x06 or 0x08 or 0x0A
+            or 0x0B;
     }
 
     private static void ValidateRtu(RtuConnectionConfiguration rtu, ValidationResult result)

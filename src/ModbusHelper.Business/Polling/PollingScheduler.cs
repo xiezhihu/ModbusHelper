@@ -1,4 +1,5 @@
 using System.Diagnostics;
+
 using ModbusHelper.Business.Connections;
 using ModbusHelper.Business.Data;
 using ModbusHelper.Business.Logging;
@@ -329,7 +330,7 @@ public sealed class PollingScheduler : IAsyncDisposable
                 message));
     }
 
-    private void OnConnectionStateChanged(object? sender, Communication.Masters.ConnectionStateChangedEventArgs args)
+    private void OnConnectionStateChanged(object? sender, ConnectionStatusChangedEventArgs args)
     {
         if (args.State is ConnectionState.Faulted or ConnectionState.Disconnected)
         {

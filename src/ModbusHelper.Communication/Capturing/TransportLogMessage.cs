@@ -8,5 +8,5 @@ namespace ModbusHelper.Communication.Capturing;
 /// <param name="Message">原始诊断消息。</param>
 public sealed record TransportLogMessage(
     DateTimeOffset Timestamp,
-    NModbus.LoggingLevel Level,
+    TransportLogLevel Level,
     string Message);

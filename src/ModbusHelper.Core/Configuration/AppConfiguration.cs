@@ -28,6 +28,9 @@ public sealed class AppConfiguration
     /// <summary>数据解析配置。</summary>
     public DataParsingConfiguration Parsing { get; set; } = new();
 
+    /// <summary>每条趋势曲线保留的最大点数。</summary>
+    public int TrendCapacity { get; set; } = 5000;
+
     /// <summary>从站模拟配置。</summary>
     public SlaveSimulationConfiguration SlaveSimulator { get; set; } = new();
 }

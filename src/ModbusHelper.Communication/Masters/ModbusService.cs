@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Ports;
 using System.Net.Sockets;
+
 using ModbusHelper.Communication.Capturing;
 using ModbusHelper.Communication.Exceptions;
 using ModbusHelper.Communication.Validation;
@@ -9,6 +10,7 @@ using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Exceptions;
 using ModbusHelper.Core.Models;
 using ModbusHelper.Core.Protocol;
+
 using NModbus;
 using NModbus.Data;
 using NModbus.Message;

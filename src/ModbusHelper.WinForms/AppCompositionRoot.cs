@@ -11,6 +11,7 @@ internal static class AppCompositionRoot
     /// <returns>已完成依赖装配的主窗体。</returns>
     public static MainForm CreateMainForm()
     {
-        return new MainForm();
+        AppServices services = AppServices.CreateAsync().GetAwaiter().GetResult();
+        return new MainForm(services);
     }
 }

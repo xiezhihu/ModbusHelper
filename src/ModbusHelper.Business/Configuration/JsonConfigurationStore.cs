@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Protocol;
@@ -163,7 +164,15 @@ public sealed class JsonConfigurationStore
         });
         configuration.SlaveSimulator.Units.Add(new SlaveUnitConfiguration
         {
-            UnitId = 1
+            UnitId = 1,
+            HoldingRegisters =
+            {
+                new RegisterInitialValue { Address = 0, Value = 0 }
+            },
+            Coils =
+            {
+                new CoilInitialValue { Address = 0, Value = false }
+            }
         });
         return configuration;
     }
@@ -190,6 +199,7 @@ public sealed class JsonConfigurationStore
         configuration.PollingTasks ??= new List<PollingTaskConfiguration>();
         configuration.Points ??= new List<PointConfiguration>();
         configuration.Parsing ??= new DataParsingConfiguration();
+        configuration.TrendCapacity = Math.Clamp(configuration.TrendCapacity, 100, 100_000);
         configuration.SlaveSimulator ??= new SlaveSimulationConfiguration();
         configuration.SlaveSimulator.Rtu ??= new RtuConnectionConfiguration();
         configuration.SlaveSimulator.Tcp ??= new TcpSlaveConfiguration();

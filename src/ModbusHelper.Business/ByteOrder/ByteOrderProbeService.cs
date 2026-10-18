@@ -1,4 +1,5 @@
 using System.Globalization;
+
 using ModbusHelper.Business.Connections;
 using ModbusHelper.Business.Data;
 using ModbusHelper.Core.Configuration;

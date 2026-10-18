@@ -1,4 +1,5 @@
 using ModbusHelper.Core.Configuration;
+
 using NModbus;
 using NModbus.Message;
 

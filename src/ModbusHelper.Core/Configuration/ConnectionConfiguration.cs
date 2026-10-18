@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+
 using ModbusHelper.Core.Enums;
 
 namespace ModbusHelper.Core.Configuration;

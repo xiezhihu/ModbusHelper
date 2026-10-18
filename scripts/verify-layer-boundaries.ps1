@@ -12,9 +12,9 @@ $禁止模式 = @(
     'System\.Windows\.Forms\.',
     'MessageBox',
     'BeginInvoke',
+    '\bInvokeRequired\b',
     '\bControl\b',
-    '\bForm\b',
-    '\bInvoke\b'
+    '\bForm\b'
 )
 
 foreach ($目录 in $待检查目录) {

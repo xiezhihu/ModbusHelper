@@ -1,6 +1,8 @@
 using System.Net.Sockets;
+
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Exceptions;
+
 using NModbus;
 
 namespace ModbusHelper.Communication.Exceptions;
@@ -49,18 +51,31 @@ public static class ModbusExceptionTranslator
         if (unwrapped is TimeoutException)
         {
             return new ModbusCommunicationException(
-                $"{operation}超时",
+                $"{operation}传输层超时",
                 CommunicationErrorKind.Timeout,
                 unitId,
                 functionCode,
                 null,
                 null,
-                "检查从站地址、串口参数、网络连通性和从站响应时间；必要时分别调整传输层超时和应用层应答超时。",
+                "传输层在底层读取或写入完成前超时。检查从站地址、串口参数和网络连通性，并单独调整传输层超时。",
                 unwrapped);
         }
 
         if (unwrapped is SocketException socketException)
         {
+            if (socketException.SocketErrorCode == SocketError.TimedOut)
+            {
+                return new ModbusCommunicationException(
+                    $"{operation}传输层超时",
+                    CommunicationErrorKind.Timeout,
+                    unitId,
+                    functionCode,
+                    null,
+                    null,
+                    "Socket 收发超时，检查网络链路和传输层超时配置。",
+                    unwrapped);
+            }
+
             if (socketException.SocketErrorCode == SocketError.ConnectionRefused)
             {
                 return new ModbusCommunicationException(
@@ -108,6 +123,32 @@ public static class ModbusExceptionTranslator
                 null,
                 null,
                 "检查从站地址、功能码、起始地址、数量和写入数据。",
+                unwrapped);
+        }
+
+        if (unwrapped is FormatException || IsChecksumMessage(unwrapped.Message))
+        {
+            return new ModbusCommunicationException(
+                $"{operation}失败：报文校验错误",
+                CommunicationErrorKind.Checksum,
+                unitId,
+                functionCode,
+                null,
+                null,
+                "检查波特率、数据位、校验位、停止位、线路干扰、终端电阻和从站地址。",
+                unwrapped);
+        }
+
+        if (unwrapped is IOException && IsTimeoutMessage(unwrapped.Message))
+        {
+            return new ModbusCommunicationException(
+                $"{operation}传输层超时",
+                CommunicationErrorKind.Timeout,
+                unitId,
+                functionCode,
+                null,
+                null,
+                "底层输入输出等待超时。检查串口或网络传输超时配置以及从站响应。",
                 unwrapped);
         }
 
@@ -171,5 +212,19 @@ public static class ModbusExceptionTranslator
                || message.Contains("busy", StringComparison.OrdinalIgnoreCase)
                || message.Contains("占用", StringComparison.OrdinalIgnoreCase)
                || message.Contains("拒绝", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsChecksumMessage(string message)
+    {
+        return message.Contains("CRC", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("checksum", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("校验", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTimeoutMessage(string message)
+    {
+        return message.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("超时", StringComparison.OrdinalIgnoreCase);
     }
 }

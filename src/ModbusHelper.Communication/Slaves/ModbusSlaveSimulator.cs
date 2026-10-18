@@ -1,11 +1,13 @@
 using System.IO.Ports;
 using System.Net;
 using System.Net.Sockets;
+
 using ModbusHelper.Communication.Capturing;
 using ModbusHelper.Communication.Validation;
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Models;
+
 using NModbus;
 using NModbus.Data;
 using NModbus.Serial;

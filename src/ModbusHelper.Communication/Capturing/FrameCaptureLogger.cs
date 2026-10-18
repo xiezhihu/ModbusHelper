@@ -1,6 +1,8 @@
 using System.Globalization;
+
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Models;
+
 using NModbus;
 using NModbus.Logging;
 
@@ -67,7 +69,10 @@ public sealed class FrameCaptureLogger : IModbusLogger
 
         if (level >= LoggingLevel.Warning)
         {
-            DiagnosticMessage?.Invoke(new TransportLogMessage(DateTimeOffset.Now, level, message));
+            DiagnosticMessage?.Invoke(new TransportLogMessage(
+                DateTimeOffset.Now,
+                MapLevel(level),
+                message));
         }
     }
 
@@ -210,5 +215,19 @@ public sealed class FrameCaptureLogger : IModbusLogger
     private static string DirectionText(DataDirection direction)
     {
         return direction == DataDirection.Tx ? "发送" : "接收";
+    }
+
+    private static TransportLogLevel MapLevel(LoggingLevel level)
+    {
+        return level switch
+        {
+            LoggingLevel.Trace => TransportLogLevel.Trace,
+            LoggingLevel.Debug => TransportLogLevel.Debug,
+            LoggingLevel.Information => TransportLogLevel.Information,
+            LoggingLevel.Warning => TransportLogLevel.Warning,
+            LoggingLevel.Error => TransportLogLevel.Error,
+            LoggingLevel.Critical => TransportLogLevel.Critical,
+            _ => TransportLogLevel.Debug
+        };
     }
 }

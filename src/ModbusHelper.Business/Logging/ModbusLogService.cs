@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Exceptions;
 using ModbusHelper.Core.Models;
@@ -15,6 +16,7 @@ public sealed class ModbusLogService
     private readonly List<ModbusLogRecord> _records;
     private readonly int _capacity;
     private bool _paused;
+    private long _revision;
 
     /// <summary>
     /// 初始化日志服务。
@@ -43,6 +45,9 @@ public sealed class ModbusLogService
         }
     }
 
+    /// <summary>日志内容修订号，用于 UI 判断是否需要刷新。</summary>
+    public long Revision => Interlocked.Read(ref _revision);
+
     /// <summary>
     /// 设置暂停状态。暂停期间的新记录被丢弃，已有记录保留。
     /// </summary>
@@ -52,6 +57,7 @@ public sealed class ModbusLogService
         lock (_syncRoot)
         {
             _paused = paused;
+            Interlocked.Increment(ref _revision);
         }
     }
 
@@ -176,6 +182,7 @@ public sealed class ModbusLogService
         lock (_syncRoot)
         {
             _records.Clear();
+            Interlocked.Increment(ref _revision);
         }
     }
 
@@ -266,6 +273,7 @@ public sealed class ModbusLogService
             }
 
             _records.Add(record);
+            Interlocked.Increment(ref _revision);
             if (_records.Count > _capacity)
             {
                 _records.RemoveRange(0, _records.Count - _capacity);

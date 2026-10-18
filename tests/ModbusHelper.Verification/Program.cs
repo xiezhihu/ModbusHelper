@@ -1,6 +1,7 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Collections.Concurrent;
+
 using ModbusHelper.Business.ByteOrder;
 using ModbusHelper.Business.Configuration;
 using ModbusHelper.Business.Connections;
@@ -9,8 +10,8 @@ using ModbusHelper.Business.Logging;
 using ModbusHelper.Business.Polling;
 using ModbusHelper.Business.Statistics;
 using ModbusHelper.Business.Trends;
-using ModbusHelper.Communication.Exceptions;
 using ModbusHelper.Communication.Capturing;
+using ModbusHelper.Communication.Exceptions;
 using ModbusHelper.Communication.Masters;
 using ModbusHelper.Communication.Slaves;
 using ModbusHelper.Communication.Validation;
@@ -36,6 +37,7 @@ await RunAsync("CSV 转义与 BOM", TestCsvExport);
 await RunAsync("SPSC 环形缓冲区", TestSpscRingBuffer);
 await RunAsync("通信统计", TestStatistics);
 await RunAsync("TCP 主从自环", TestTcpSelfLoop);
+await RunAsync("两层超时", TestTimeoutLayers);
 await RunAsync("配置保存与加载", TestConfigurationRoundTrip);
 
 Console.WriteLine();
@@ -488,13 +490,62 @@ static async Task TestTcpSelfLoop()
         IntervalMilliseconds = 100,
         ShowInTrend = true
     };
-    await scheduler.StartEnabledAsync(new[] { task1, task2 });
+    PollingTaskConfiguration task3 = new()
+    {
+        Id = $"task-{id}-3",
+        Name = "寄存器轮询 3",
+        Function = ModbusFunction.ReadHoldingRegisters,
+        UnitId = 1,
+        StartAddress = 1,
+        Count = 1,
+        IntervalMilliseconds = 100,
+        DataType = DataValueType.UInt16,
+        ShowInTrend = true
+    };
+    PollingTaskConfiguration task4 = new()
+    {
+        Id = $"task-{id}-4",
+        Name = "寄存器轮询 4",
+        Function = ModbusFunction.ReadHoldingRegisters,
+        UnitId = 1,
+        StartAddress = 2,
+        Count = 1,
+        IntervalMilliseconds = 100,
+        DataType = DataValueType.UInt16,
+        ShowInTrend = true
+    };
+    PollingTaskConfiguration task5 = new()
+    {
+        Id = $"task-{id}-5",
+        Name = "寄存器轮询 5",
+        Function = ModbusFunction.ReadHoldingRegisters,
+        UnitId = 1,
+        StartAddress = 3,
+        Count = 1,
+        IntervalMilliseconds = 100,
+        DataType = DataValueType.UInt16,
+        ShowInTrend = true
+    };
+    PollingTaskConfiguration[] pollingTasks =
+    {
+        task1,
+        task2,
+        task3,
+        task4,
+        task5
+    };
+    await scheduler.StartEnabledAsync(pollingTasks);
     await Task.Delay(650);
     await scheduler.StopAllAsync();
-    True(sampleCounts.GetValueOrDefault(task1.Id) >= 3, "并行轮询任务 1 采样不足。");
-    True(sampleCounts.GetValueOrDefault(task2.Id) >= 3, "并行轮询任务 2 采样不足。");
-    True(trendStore.Get(task1.Id)!.LatestSequence >= 3, "趋势任务 1 未收到数据。");
-    True(trendStore.Get(task2.Id)!.LatestSequence >= 3, "趋势任务 2 未收到数据。");
+    foreach (PollingTaskConfiguration task in pollingTasks)
+    {
+        True(
+            sampleCounts.GetValueOrDefault(task.Id) >= 2,
+            $"五任务并行轮询“{task.Name}”采样不足。");
+        True(
+            trendStore.Get(task.Id)!.LatestSequence >= 2,
+            $"趋势任务“{task.Name}”未收到数据。");
+    }
 
     await connectionManager.WriteAsync(
         ModbusFunction.WriteMultipleRegisters,
@@ -529,6 +580,79 @@ static int GetFreeTcpPort()
     return port;
 }
 
+static async Task TestTimeoutLayers()
+{
+    await VerifyTimeoutAsync(
+        transportTimeoutMilliseconds: 200,
+        applicationTimeoutMilliseconds: 1500,
+        expectedMessage: "传输层超时");
+    await VerifyTimeoutAsync(
+        transportTimeoutMilliseconds: 1000,
+        applicationTimeoutMilliseconds: 250,
+        expectedMessage: "应用层应答超时");
+}
+
+static async Task VerifyTimeoutAsync(
+    int transportTimeoutMilliseconds,
+    int applicationTimeoutMilliseconds,
+    string expectedMessage)
+{
+    int port = GetFreeTcpPort();
+    using TcpListener listener = new(IPAddress.Loopback, port);
+    listener.Start();
+    using CancellationTokenSource serverCancellation = new();
+    TcpClient? acceptedClient = null;
+    Task serverTask = Task.Run(async () =>
+    {
+        acceptedClient = await listener.AcceptTcpClientAsync(serverCancellation.Token);
+        await Task.Delay(5000, serverCancellation.Token);
+    });
+
+    ConnectionConfiguration configuration = new()
+    {
+        Type = ConnectionType.Tcp,
+        Tcp = new TcpConnectionConfiguration
+        {
+            Host = "127.0.0.1",
+            Port = port,
+            ConnectTimeoutMilliseconds = 1000
+        },
+        TransportTimeoutMilliseconds = transportTimeoutMilliseconds,
+        ApplicationResponseTimeoutMilliseconds = applicationTimeoutMilliseconds,
+        RetryCount = 0
+    };
+
+    using ModbusService service = new(configuration);
+    await service.ConnectAsync();
+    try
+    {
+        await service.ReadHoldingRegistersAsync(1, 0, 1);
+        throw new InvalidOperationException("无响应服务器不应返回读取结果。");
+    }
+    catch (ModbusCommunicationException exception)
+    {
+        Equal(CommunicationErrorKind.Timeout, exception.ErrorKind);
+        True(
+            exception.Message.Contains(expectedMessage, StringComparison.Ordinal),
+            $"超时类型不正确：{exception.Message}");
+        Equal(ConnectionState.Faulted, service.State);
+    }
+    finally
+    {
+        serverCancellation.Cancel();
+        acceptedClient?.Dispose();
+        listener.Stop();
+        try
+        {
+            await serverTask;
+        }
+        catch (OperationCanceledException)
+        {
+            // 测试服务器正常取消。
+        }
+    }
+}
+
 static async Task TestConfigurationRoundTrip()
 {
     string directory = Path.Combine(Path.GetTempPath(), "ModbusHelperVerification");
@@ -542,6 +666,17 @@ static async Task TestConfigurationRoundTrip()
         configuration.AddressBase = AddressBase.OneBased;
         configuration.Connection.Type = ConnectionType.Rtu;
         configuration.Connection.IsConnected = true;
+        configuration.TrendCapacity = 1234;
+        configuration.Points.Add(new PointConfiguration
+        {
+            Name = "温度",
+            UnitId = 1,
+            Function = ModbusFunction.ReadHoldingRegisters,
+            StartAddress = 10,
+            Count = 2,
+            DataType = DataValueType.Float,
+            ShowInTrend = true
+        });
         configuration.PollingTasks[0].IsRunning = true;
         configuration.SlaveSimulator.Units[0].ExceptionRules.Add(new ExceptionInjectionRule
         {
@@ -562,6 +697,8 @@ static async Task TestConfigurationRoundTrip()
         Equal(ConnectionType.Rtu, loaded.Connection.Type);
         False(loaded.Connection.IsConnected);
         False(loaded.PollingTasks[0].IsRunning);
+        Equal(1234, loaded.TrendCapacity);
+        Equal("温度", loaded.Points[0].Name);
         Equal(1, loaded.SlaveSimulator.Units[0].ExceptionRules.Count);
     }
     finally
