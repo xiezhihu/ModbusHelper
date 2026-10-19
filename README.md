@@ -74,6 +74,7 @@ dotnet run --project tests/ModbusHelper.UiSmoke/ModbusHelper.UiSmoke.csproj -- -
 
 ## 文档
 
+- 软件使用手册：[`docs/软件使用手册.md`](docs/软件使用手册.md)
 - 使用步骤：`docs/使用说明.md`
 - 当前进度：`docs/handoff.md`
 - 长期技术结论：`docs/facts.md`
