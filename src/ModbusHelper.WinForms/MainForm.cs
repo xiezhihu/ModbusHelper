@@ -15,7 +15,7 @@ public sealed partial class MainForm : Form
     private readonly AppServices _services;
     private readonly AppConfiguration _configuration;
     private readonly TabControl _mainTabs = new();
-    private readonly TabPage _connectionPage = new("连接与读写");
+    private readonly TabPage _connectionPage = new("主站连接与读写");
     private readonly TabPage _pollingPage = new("轮询任务");
     private readonly TabPage _slavePage = new("从站模拟");
     private readonly TabPage _trendPage = new("趋势图");
@@ -151,7 +151,7 @@ public sealed partial class MainForm : Form
         _mainTabs.Dock = DockStyle.Fill;
         _mainTabs.Padding = new Point(12, 8);
         _mainTabs.SizeMode = TabSizeMode.Fixed;
-        _mainTabs.ItemSize = new Size(UiHelpers.Scale(this, 108), UiHelpers.Scale(this, 34));
+        _mainTabs.ItemSize = new Size(UiHelpers.Scale(this, 128), UiHelpers.Scale(this, 34));
         _mainTabs.Margin = new Padding(0);
         _mainTabs.TabPages.Add(_connectionPage);
         _mainTabs.TabPages.Add(_pollingPage);
