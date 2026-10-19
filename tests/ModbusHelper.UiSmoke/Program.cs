@@ -175,6 +175,23 @@ internal static class Program
         }
 
         tabs.SelectedIndex = 1;
+        DataGridView pollingGrid = GetField<DataGridView>(form, "_pollingGrid");
+        if (!pollingGrid.MultiSelect || pollingGrid.SelectionMode != DataGridViewSelectionMode.FullRowSelect)
+        {
+            throw new InvalidOperationException("轮询任务表未启用整行多选。");
+        }
+
+        pollingGrid.ClearSelection();
+        if (pollingGrid.Rows.Count >= 2)
+        {
+            pollingGrid.Rows[0].Selected = true;
+            pollingGrid.Rows[1].Selected = true;
+            if (pollingGrid.SelectedRows.Count < 2)
+            {
+                throw new InvalidOperationException("轮询任务表无法同时选中多个任务。");
+            }
+        }
+
         Button startAll = FindButton(tabs, "启动全部")
             ?? throw new InvalidOperationException("未找到启动全部按钮。");
         startAll.PerformClick();

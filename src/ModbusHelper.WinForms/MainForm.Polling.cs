@@ -74,7 +74,7 @@ public sealed partial class MainForm
         _pollingGrid.AutoGenerateColumns = false;
         _pollingGrid.RowHeadersVisible = false;
         _pollingGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        _pollingGrid.MultiSelect = false;
+        _pollingGrid.MultiSelect = true;
         _pollingGrid.BackgroundColor = Color.White;
         _pollingGrid.EditMode = DataGridViewEditMode.EditOnEnter;
         _pollingGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
@@ -305,28 +305,39 @@ public sealed partial class MainForm
         RebuildTrendSeries();
     }
 
-    private void DeletePollingTask()
+    private async void DeletePollingTask()
     {
-        if (_pollingGrid.CurrentRow?.DataBoundItem is not PollingTaskConfiguration task)
+        List<PollingTaskConfiguration> tasks = GetSelectedPollingTasks();
+        if (tasks.Count == 0)
         {
             return;
         }
 
-        _ = _services.PollingScheduler.StopTaskAsync(task.Id);
-        _pollingTaskBindings.Remove(task);
+        foreach (PollingTaskConfiguration task in tasks)
+        {
+            await _services.PollingScheduler.StopTaskAsync(task.Id);
+            _pollingTaskBindings.Remove(task);
+            _services.TrendDataStore.Remove(task.Id);
+        }
+
         CapturePollingConfiguration();
-        _services.TrendDataStore.Remove(task.Id);
         RebuildTrendSeries();
     }
 
     private void StartSelectedPollingTask()
     {
-        if (_pollingGrid.CurrentRow?.DataBoundItem is not PollingTaskConfiguration task)
+        List<PollingTaskConfiguration> tasks = GetSelectedPollingTasks();
+        if (tasks.Count == 0)
         {
             return;
         }
 
-        StartPollingTask(task);
+        _pollingGrid.EndEdit();
+        CapturePollingConfiguration();
+        foreach (PollingTaskConfiguration task in tasks)
+        {
+            StartPollingTask(task);
+        }
     }
 
     private void StartAllPollingTasks()
@@ -379,14 +390,39 @@ public sealed partial class MainForm
 
     private async void StopSelectedPollingTask()
     {
-        if (_pollingGrid.CurrentRow?.DataBoundItem is not PollingTaskConfiguration task)
+        List<PollingTaskConfiguration> tasks = GetSelectedPollingTasks();
+        if (tasks.Count == 0)
         {
             return;
         }
 
-        await _services.PollingScheduler.StopTaskAsync(task.Id);
-        task.IsRunning = false;
-        ResetPollingTaskItem(task);
+        foreach (PollingTaskConfiguration task in tasks)
+        {
+            await _services.PollingScheduler.StopTaskAsync(task.Id);
+            task.IsRunning = false;
+            ResetPollingTaskItem(task);
+        }
+    }
+
+    private List<PollingTaskConfiguration> GetSelectedPollingTasks()
+    {
+        _pollingGrid.EndEdit();
+        List<PollingTaskConfiguration> tasks = _pollingGrid.SelectedRows
+            .Cast<DataGridViewRow>()
+            .Select(row => row.DataBoundItem as PollingTaskConfiguration)
+            .Where(task => task is not null)
+            .Cast<PollingTaskConfiguration>()
+            .Distinct()
+            .ToList();
+
+        if (tasks.Count > 0)
+        {
+            return tasks;
+        }
+
+        return _pollingGrid.CurrentRow?.DataBoundItem is PollingTaskConfiguration current
+            ? new List<PollingTaskConfiguration> { current }
+            : new List<PollingTaskConfiguration>();
     }
 
     private void SelectTrendColor()

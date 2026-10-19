@@ -16,7 +16,12 @@ public sealed partial class MainForm
     private readonly ComboBox _slaveTypeCombo = UiHelpers.CreateCombo();
     private readonly GroupBox _slaveRtuPanel = UiHelpers.CreateParameterGroup("RTU 串口参数");
     private readonly GroupBox _slaveTcpPanel = UiHelpers.CreateParameterGroup("TCP 监听参数");
-    private readonly Panel _slaveParameterHost = new() { Dock = DockStyle.Fill };
+    private readonly Panel _slaveParameterHost = new()
+    {
+        Dock = DockStyle.Top,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink
+    };
     private readonly ComboBox _slaveSerialPortCombo = UiHelpers.CreateCombo();
     private readonly NumericUpDown _slaveBaudRateInput = UiHelpers.CreateNumber(1200, 921600, 9600);
     private readonly NumericUpDown _slaveDataBitsInput = UiHelpers.CreateNumber(5, 8, 8);
@@ -42,6 +47,8 @@ public sealed partial class MainForm
     private readonly TextBox _slaveManualValuesInput = UiHelpers.CreateTextBox();
     private readonly TextBox _slaveManualResultBox = CreateResultTextBox();
     private readonly TextBox _slaveFrameBox = CreateResultTextBox();
+    private TableLayoutPanel? _slaveRootLayout;
+    private GroupBox? _slaveEndpointGroup;
     private long _lastSlaveFrameRevision = -1;
 
     private void InitializeSlavePage()
@@ -58,7 +65,9 @@ public sealed partial class MainForm
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 43F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 57F));
 
-        root.Controls.Add(CreateSlaveEndpointGroup(), 0, 0);
+        _slaveRootLayout = root;
+        _slaveEndpointGroup = CreateSlaveEndpointGroup();
+        root.Controls.Add(_slaveEndpointGroup, 0, 0);
         SplitContainer configSplit = new()
         {
             Dock = DockStyle.Fill,
@@ -129,17 +138,26 @@ public sealed partial class MainForm
     private GroupBox CreateSlaveEndpointGroup()
     {
         GroupBox group = UiHelpers.CreateGroup("从站监听与启动");
+        group.Dock = DockStyle.Top;
+        group.AutoSize = true;
+        group.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        group.Padding = new Padding(8, 6, 8, 8);
         TableLayoutPanel table = new()
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             ColumnCount = 3,
-            RowCount = 1
+            RowCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250F));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220F));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330F));
 
         TableLayoutPanel typeTable = UiHelpers.CreateFieldTable(1);
+        typeTable.Dock = DockStyle.Top;
+        typeTable.AutoSize = true;
+        typeTable.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         typeTable.ColumnStyles[0].Width = 76F;
         UiHelpers.AddField(typeTable, 0, "类型", _slaveTypeCombo);
 
@@ -152,10 +170,14 @@ public sealed partial class MainForm
 
         FlowLayoutPanel actions = new()
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             FlowDirection = FlowDirection.LeftToRight,
-            Padding = new Padding(4, 14, 4, 4)
+            WrapContents = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(4, 8, 4, 4)
         };
+        _slaveStateLabel.AutoEllipsis = true;
         actions.Controls.Add(_slaveStartButton);
         actions.Controls.Add(_slaveStopButton);
         actions.Controls.Add(_slaveStateLabel);
@@ -565,6 +587,21 @@ public sealed partial class MainForm
                    == ConnectionType.Rtu;
         _slaveRtuPanel.Visible = rtu;
         _slaveTcpPanel.Visible = !rtu;
+        UpdateSlaveEndpointRowHeight();
+    }
+
+    private void UpdateSlaveEndpointRowHeight()
+    {
+        if (_slaveRootLayout is null || _slaveEndpointGroup is null)
+        {
+            return;
+        }
+
+        _slaveEndpointGroup.PerformLayout();
+        int preferredHeight = _slaveEndpointGroup.GetPreferredSize(
+            new Size(_slaveRootLayout.ClientSize.Width, 0)).Height;
+        _slaveRootLayout.RowStyles[0].Height = Math.Max(160, preferredHeight + 8);
+        _slaveRootLayout.PerformLayout();
     }
 
     private void RefreshSlaveSerialPorts()
