@@ -54,6 +54,7 @@ public sealed partial class MainForm
     private readonly Label _elapsedLabel = UiHelpers.CreateLabel("耗时：-- ms");
     private TableLayoutPanel? _manualParameterTable;
     private AddressBase _currentAddressBase;
+    private ModbusFunction _currentManualFunction = ModbusFunction.ReadHoldingRegisters;
     private bool _addressBaseInitializing;
 
     private void InitializeConnectionPage()
@@ -597,6 +598,7 @@ public sealed partial class MainForm
         ModbusFunction function = UiHelpers.GetSelectedValue(
             _manualFunctionCombo,
             ModbusFunction.ReadHoldingRegisters);
+        ConvertManualAddressForFunctionChange(function);
         bool write = function.IsWrite();
         _executeManualButton.Text = write ? "执行写入" : "执行读取";
         _manualWriteDataInput.Visible = write;
@@ -624,6 +626,43 @@ public sealed partial class MainForm
         }
 
         UpdateManualCountLimits();
+    }
+
+    /// <summary>
+    /// 功能码切换时保持同一个协议地址，只更新 1 基界面的区域前缀。
+    /// 例如保持寄存器 40001 切换到线圈时显示为 00001，发送地址仍为 0。
+    /// </summary>
+    private void ConvertManualAddressForFunctionChange(ModbusFunction nextFunction)
+    {
+        if (_addressBaseInitializing || _currentManualFunction == nextFunction)
+        {
+            _currentManualFunction = nextFunction;
+            return;
+        }
+
+        try
+        {
+            ushort protocolAddress = ModbusAddressConverter.ToProtocolAddress(
+                (int)_manualAddressInput.Value,
+                _currentAddressBase,
+                _currentManualFunction);
+            int displayAddress = ModbusAddressConverter.ToDisplayAddress(
+                protocolAddress,
+                _currentAddressBase,
+                nextFunction);
+            _manualAddressInput.Value = ClampDecimal(
+                displayAddress,
+                _manualAddressInput.Minimum,
+                _manualAddressInput.Maximum);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // 当前输入不符合旧功能码的地址范围时保留原值，后续执行操作会给出明确校验错误。
+        }
+        finally
+        {
+            _currentManualFunction = nextFunction;
+        }
     }
 
     private void UpdateManualCountLimits()

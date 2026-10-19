@@ -98,6 +98,18 @@ static Task TestAddressConversion()
         1,
         AddressBase.OneBased,
         ModbusFunction.ReadCoils));
+    Equal((ushort)0, ModbusAddressConverter.ToProtocolAddress(
+        1,
+        AddressBase.OneBased,
+        ModbusFunction.WriteSingleCoil));
+    Equal((ushort)0, ModbusAddressConverter.ToProtocolAddress(
+        40001,
+        AddressBase.OneBased,
+        ModbusFunction.WriteSingleRegister));
+    Equal((ushort)0, ModbusAddressConverter.ToProtocolAddress(
+        40001,
+        AddressBase.OneBased,
+        ModbusFunction.WriteMultipleRegisters));
     Equal(40001, ModbusAddressConverter.ToDisplayAddress(
         0,
         AddressBase.OneBased,
