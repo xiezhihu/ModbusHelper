@@ -41,6 +41,23 @@ public static class ConnectionParameterValidator
             result.AddError("重试等待时间不能为负数。");
         }
 
+        if (configuration.TransportTimeoutMilliseconds > 0
+            && configuration.ApplicationResponseTimeoutMilliseconds > 0
+            && configuration.RetryCount > 0
+            && configuration.RetryDelayMilliseconds >= 0)
+        {
+            long retryBudget = (long)(configuration.RetryCount + 1)
+                * configuration.TransportTimeoutMilliseconds
+                + (long)configuration.RetryCount * configuration.RetryDelayMilliseconds;
+            if (configuration.ApplicationResponseTimeoutMilliseconds < retryBudget)
+            {
+                result.AddWarning(
+                    $"应用层应答超时为 {configuration.ApplicationResponseTimeoutMilliseconds} 毫秒，"
+                    + $"小于完成 {configuration.RetryCount} 次重试所需的理论等待时间约 {retryBudget} 毫秒；"
+                    + "应用层超时可能在全部重试完成前结束。");
+            }
+        }
+
         if (configuration.Type == ConnectionType.Rtu)
         {
             ValidateRtu(configuration.Rtu, result);

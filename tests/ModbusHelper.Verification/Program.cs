@@ -29,6 +29,7 @@ await RunAsync("地址基准换算", TestAddressConversion);
 await RunAsync("读数量边界", TestReadLimits);
 await RunAsync("写数量边界", TestWriteLimits);
 await RunAsync("从站地址规则", TestUnitIdRules);
+await RunAsync("重试预算提示", TestRetryBudgetWarning);
 await RunAsync("异常码中文映射", TestExceptionCodeMap);
 await RunAsync("异常转换", TestExceptionTranslation);
 await RunAsync("帧日志解析", TestFrameCaptureLogger);
@@ -151,6 +152,48 @@ static Task TestUnitIdRules()
     True(ModbusRequestValidator.ValidateWriteUnitId(248, ConnectionType.Rtu).HasWarnings);
     True(ModbusRequestValidator.ValidateWriteUnitId(255, ConnectionType.Tcp).HasWarnings);
     return Task.CompletedTask;
+}
+
+static Task TestRetryBudgetWarning()
+{
+    ConnectionParameterValidatorResult(
+        transportTimeout: 1000,
+        applicationTimeout: 1500,
+        retryCount: 3,
+        retryDelay: 100,
+        expectedWarning: true);
+    ConnectionParameterValidatorResult(
+        transportTimeout: 1000,
+        applicationTimeout: 4300,
+        retryCount: 3,
+        retryDelay: 100,
+        expectedWarning: false);
+    return Task.CompletedTask;
+}
+
+static void ConnectionParameterValidatorResult(
+    int transportTimeout,
+    int applicationTimeout,
+    int retryCount,
+    int retryDelay,
+    bool expectedWarning)
+{
+    ValidationResult result = ConnectionParameterValidator.Validate(
+        new ConnectionConfiguration
+        {
+            Type = ConnectionType.Tcp,
+            TransportTimeoutMilliseconds = transportTimeout,
+            ApplicationResponseTimeoutMilliseconds = applicationTimeout,
+            RetryCount = retryCount,
+            RetryDelayMilliseconds = retryDelay,
+            Tcp = new TcpConnectionConfiguration
+            {
+                Host = "127.0.0.1",
+                Port = 502
+            }
+        });
+    Equal(expectedWarning, result.Warnings.Any(
+        warning => warning.Contains("全部重试", StringComparison.Ordinal)));
 }
 
 static Task TestExceptionCodeMap()

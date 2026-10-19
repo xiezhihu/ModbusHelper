@@ -35,6 +35,7 @@ public sealed partial class MainForm : Form
     private readonly ToolStripStatusLabel _statusStatisticsLabel = new();
     private bool _closing;
     private bool _allowClose;
+    private long _lastRequestHistoryRevision = -1;
 
     internal MainForm(AppServices services)
     {
@@ -208,7 +209,7 @@ public sealed partial class MainForm : Form
         SetToolTip(_executeManualButton, "立即执行一次当前参数对应的读写操作。");
         SetToolTip(_connectButton, "按当前连接参数建立主站连接。");
         SetToolTip(_disconnectButton, "断开当前主站连接并停止相关轮询任务。");
-        SetToolTip(_requestHexBox, "最近一次发送给从站的原始十六进制报文。");
+        SetToolTip(_requestHexBox, "主站最近发送的请求历史，格式为“时间戳：十六进制报文”；重试会逐条显示。");
         SetToolTip(_responseHexBox, "最近一次收到的原始十六进制响应报文。");
         SetToolTip(_parsedValueBox, "响应报文按当前数据类型和字节序解析后的结果，同时保留原始值。");
 
@@ -350,6 +351,7 @@ public sealed partial class MainForm : Form
             action();
         }
 
+        RefreshRequestHistory();
         RefreshSlaveFrames();
         RefreshTrendChart();
         RefreshLogGrid();

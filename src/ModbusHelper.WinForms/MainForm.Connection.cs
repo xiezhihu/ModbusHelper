@@ -3,6 +3,7 @@ using System.IO.Ports;
 
 using ModbusHelper.Business.Connections;
 using ModbusHelper.Business.Data;
+using ModbusHelper.Business.Logging;
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Exceptions;
 using ModbusHelper.Core.Models;
@@ -336,7 +337,7 @@ public sealed partial class MainForm
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
 
-        GroupBox requestGroup = UiHelpers.CreateGroup("请求报文（十六进制）");
+        GroupBox requestGroup = UiHelpers.CreateGroup("请求历史（时间戳：十六进制）");
         requestGroup.Controls.Add(_requestHexBox);
         GroupBox responseGroup = UiHelpers.CreateGroup("响应报文（十六进制）");
         responseGroup.Controls.Add(_responseHexBox);
@@ -362,6 +363,40 @@ public sealed partial class MainForm
             BackColor = Color.White,
             Font = new Font("Consolas", 9F)
         };
+    }
+
+    /// <summary>
+    /// 从报文日志中刷新主站请求历史。历史只保留最近 200 条，避免长时间轮询导致界面文本无限增长。
+    /// </summary>
+    private void RefreshRequestHistory()
+    {
+        if (_mainTabs.SelectedTab != _connectionPage)
+        {
+            return;
+        }
+
+        long revision = _services.LogService.Revision;
+        if (revision == _lastRequestHistoryRevision)
+        {
+            return;
+        }
+
+        _lastRequestHistoryRevision = revision;
+        IReadOnlyList<ModbusLogRecord> records = _services.LogService.GetSnapshot(
+            limit: 5000,
+            newestFirst: true);
+        string[] lines = records
+            .Where(record => record.Role == ModbusRole.Master
+                && record.Direction == DataDirection.Tx)
+            .Take(200)
+            .Reverse()
+            .Select(record =>
+                $"{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff} : {record.Hex}")
+            .ToArray();
+
+        _requestHexBox.Text = string.Join(Environment.NewLine, lines);
+        _requestHexBox.SelectionStart = 0;
+        _requestHexBox.SelectionLength = 0;
     }
 
     private static TableLayoutPanel AddUnit(Control input, string unit)
@@ -470,6 +505,11 @@ public sealed partial class MainForm
 
             _connectButton.Enabled = false;
             await _services.ConnectionManager.ConnectAsync(_configuration.Connection);
+            if (validation.HasWarnings)
+            {
+                _statusConnectionLabel.Text = $"已连接；{validation.Warnings[0]}";
+                _statusConnectionLabel.ForeColor = Color.DarkOrange;
+            }
         }
         catch (ModbusCommunicationException exception)
         {
@@ -734,10 +774,10 @@ public sealed partial class MainForm
         }
         catch (ModbusCommunicationException exception)
         {
-            _requestHexBox.Text = exception.RequestHex ?? string.Empty;
             _responseHexBox.Text = exception.ResponseHex ?? string.Empty;
             _parsedValueBox.Text = exception.GetDisplayMessage();
             _elapsedLabel.Text = "耗时：-- ms";
+            RefreshRequestHistory();
             MessageBox.Show(
                 this,
                 exception.GetDisplayMessage(),
@@ -758,9 +798,9 @@ public sealed partial class MainForm
 
     private void ShowOperationResult(ModbusOperationResult result, ushort protocolAddress)
     {
-        _requestHexBox.Text = result.RequestHex;
         _responseHexBox.Text = result.ResponseHex;
         _elapsedLabel.Text = $"耗时：{result.ElapsedMilliseconds} ms";
+        RefreshRequestHistory();
         ModbusFunction function = result.Function;
         AddressBase addressBase = UiHelpers.GetSelectedValue(
             _addressBaseCombo,
