@@ -305,6 +305,18 @@ internal static class Program
             throw new InvalidOperationException("点位表未启用整行多选。");
         }
 
+        DataGridViewColumn trendColumn = grid.Columns
+            .Cast<DataGridViewColumn>()
+            .Single(column => column.HeaderText == "趋势");
+        Rectangle trendBounds = grid.GetColumnDisplayRectangle(trendColumn.Index, cutOverflow: false);
+        if (trendBounds.Width <= 0
+            || trendBounds.Left < 0
+            || trendBounds.Right > grid.ClientRectangle.Right)
+        {
+            throw new InvalidOperationException(
+                $"点位表“趋势”列未完整显示：列区域 {trendBounds}，表格区域 {grid.ClientRectangle}。");
+        }
+
         AssertReadOnlyFunctionOptions(grid, 2);
         SavePage(form, outputDirectory, "9-点位表.png");
         CheckLayoutWindow(form);

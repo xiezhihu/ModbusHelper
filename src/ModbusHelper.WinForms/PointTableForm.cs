@@ -159,7 +159,7 @@ internal sealed class PointTableForm : Form
             DataPropertyName = nameof(PointConfiguration.Name),
             HeaderText = "点位名称",
             Width = 220,
-            MinimumWidth = 160,
+            MinimumWidth = 120,
             AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
             FillWeight = 28F
         });
@@ -175,8 +175,8 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.Function),
             HeaderText = "功能码",
-            Width = UiHelpers.Scale(_grid, 174),
-            MinimumWidth = UiHelpers.Scale(_grid, 160),
+            Width = UiHelpers.Scale(_grid, 156),
+            MinimumWidth = UiHelpers.Scale(_grid, 145),
             DataSource = Enum.GetValues<ModbusFunction>()
                 .Where(function => !function.IsWrite())
                 .Select(function => new UiOption<ModbusFunction>(
@@ -210,8 +210,8 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.DataType),
             HeaderText = "数据类型",
-            Width = UiHelpers.Scale(_grid, 160),
-            MinimumWidth = UiHelpers.Scale(_grid, 150),
+            Width = UiHelpers.Scale(_grid, 145),
+            MinimumWidth = UiHelpers.Scale(_grid, 135),
             DataSource = Enum.GetValues<DataValueType>()
                 .Select(type => new UiOption<DataValueType>(type, UiHelpers.DataTypeText(type)))
                 .ToArray(),
@@ -226,8 +226,8 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.ByteOrder),
             HeaderText = "字节序",
-            Width = UiHelpers.Scale(_grid, 118),
-            MinimumWidth = UiHelpers.Scale(_grid, 110),
+            Width = UiHelpers.Scale(_grid, 100),
+            MinimumWidth = UiHelpers.Scale(_grid, 90),
             DataSource = Enum.GetValues<RegisterByteOrder>()
                 .Select(order => new UiOption<RegisterByteOrder>(
                     order,
