@@ -60,7 +60,17 @@ internal static class UiHelpers
     public static void ConfigureGridMetrics(DataGridView grid)
     {
         grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-        grid.RowTemplate.Height = Scale(grid, 30);
+        using ComboBox comboProbe = new()
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = grid.Font,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        int comboHeight = comboProbe.GetPreferredSize(new Size(0, 0)).Height;
+        grid.RowTemplate.Height = Math.Max(
+            Scale(grid, 26),
+            comboHeight + Scale(grid, 2));
         grid.ColumnHeadersHeight = Scale(grid, 34);
         grid.ColumnHeadersHeightSizeMode =
             DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
@@ -68,6 +78,7 @@ internal static class UiHelpers
             DataGridViewContentAlignment.MiddleCenter;
         grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
+        grid.DefaultCellStyle.Padding = Padding.Empty;
     }
 
     public static Button CreateButton(string text, Action action, int width = 96)

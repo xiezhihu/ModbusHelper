@@ -140,7 +140,8 @@ internal sealed class PointTableForm : Form
             ValueMember = nameof(UiOption<ModbusFunction>.Value),
             ValueType = typeof(ModbusFunction),
             DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
-            FlatStyle = FlatStyle.Standard
+            FlatStyle = FlatStyle.Standard,
+            DefaultCellStyle = { Padding = Padding.Empty }
         });
         _grid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -171,7 +172,8 @@ internal sealed class PointTableForm : Form
             ValueMember = nameof(UiOption<DataValueType>.Value),
             ValueType = typeof(DataValueType),
             DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
-            FlatStyle = FlatStyle.Standard
+            FlatStyle = FlatStyle.Standard,
+            DefaultCellStyle = { Padding = Padding.Empty }
         });
         _grid.Columns.Add(new DataGridViewComboBoxColumn
         {
@@ -188,7 +190,8 @@ internal sealed class PointTableForm : Form
             ValueMember = nameof(UiOption<RegisterByteOrder>.Value),
             ValueType = typeof(RegisterByteOrder),
             DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
-            FlatStyle = FlatStyle.Standard
+            FlatStyle = FlatStyle.Standard,
+            DefaultCellStyle = { Padding = Padding.Empty }
         });
         _grid.Columns.Add(new DataGridViewCheckBoxColumn
         {

@@ -128,6 +128,7 @@ public sealed partial class MainForm
             ValueType = typeof(ModbusFunction),
             DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
             FlatStyle = FlatStyle.Standard,
+            DefaultCellStyle = { Padding = Padding.Empty },
             SortMode = DataGridViewColumnSortMode.NotSortable
         };
         _pollingGrid.Columns.Add(functionColumn);
@@ -181,6 +182,7 @@ public sealed partial class MainForm
             ValueType = typeof(DataValueType),
             DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
             FlatStyle = FlatStyle.Standard,
+            DefaultCellStyle = { Padding = Padding.Empty },
             SortMode = DataGridViewColumnSortMode.NotSortable
         };
         _pollingGrid.Columns.Add(dataTypeColumn);
@@ -198,7 +200,9 @@ public sealed partial class MainForm
             DisplayMember = nameof(UiOption<RegisterByteOrder>.Text),
             ValueMember = nameof(UiOption<RegisterByteOrder>.Value),
             ValueType = typeof(RegisterByteOrder),
-            DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton,
+            DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
+            FlatStyle = FlatStyle.Standard,
+            DefaultCellStyle = { Padding = Padding.Empty },
             SortMode = DataGridViewColumnSortMode.NotSortable
         };
         _pollingGrid.Columns.Add(byteOrderColumn);

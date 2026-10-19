@@ -370,7 +370,8 @@ public sealed partial class MainForm
             DisplayMember = nameof(UiOption<ModbusFunction>.Text),
             ValueMember = nameof(UiOption<ModbusFunction>.Value),
             DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
-            FlatStyle = FlatStyle.Standard
+            FlatStyle = FlatStyle.Standard,
+            DefaultCellStyle = { Padding = Padding.Empty }
         };
         _slaveRuleGrid.Columns.Add(functionColumn);
         _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
