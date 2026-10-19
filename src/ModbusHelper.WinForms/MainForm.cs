@@ -210,8 +210,8 @@ public sealed partial class MainForm : Form
         SetToolTip(_connectButton, "按当前连接参数建立主站连接。");
         SetToolTip(_disconnectButton, "断开当前主站连接并停止相关轮询任务。");
         SetToolTip(_requestHexBox, "主站最近发送的请求历史，格式为“时间戳：十六进制报文”；重试会逐条显示。");
-        SetToolTip(_responseHexBox, "最近一次收到的原始十六进制响应报文。");
-        SetToolTip(_parsedValueBox, "响应报文按当前数据类型和字节序解析后的结果，同时保留原始值。");
+        SetToolTip(_responseHexBox, "主站最近收到的响应历史，格式为“时间戳：十六进制报文”；轮询和重试产生的每个响应都会单独显示。");
+        SetToolTip(_parsedValueBox, "显示当前这次操作的解析结果；寄存器会列出原始 ushort 和转换值，线圈或离散输入会按请求起始地址递增列出地址和值。");
 
         SetToolTip(_pollingGrid, "支持 Ctrl 或 Shift 多选任务；双击单元格可编辑任务参数。");
         SetGridToolTip(_pollingGrid, "启用", "任务是否参与启动全部和周期轮询。");
@@ -351,7 +351,7 @@ public sealed partial class MainForm : Form
             action();
         }
 
-        RefreshRequestHistory();
+        RefreshCommunicationHistory();
         RefreshSlaveFrames();
         RefreshTrendChart();
         RefreshLogGrid();

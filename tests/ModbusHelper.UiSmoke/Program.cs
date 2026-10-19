@@ -227,6 +227,11 @@ internal static class Program
             throw new InvalidOperationException("请求历史未按“时间戳：十六进制报文”格式显示。");
         }
 
+        if (!response.Text.Contains(" : ", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("响应历史未按“时间戳：十六进制报文”格式显示。");
+        }
+
         tabs.SelectedIndex = 3;
         Pump(TimeSpan.FromMilliseconds(450));
         SavePage(form, outputDirectory, "6-自环趋势.png");

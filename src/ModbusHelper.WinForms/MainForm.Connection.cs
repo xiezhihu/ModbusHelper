@@ -340,7 +340,7 @@ public sealed partial class MainForm
 
         GroupBox requestGroup = UiHelpers.CreateGroup("请求历史（时间戳：十六进制）");
         requestGroup.Controls.Add(_requestHexBox);
-        GroupBox responseGroup = UiHelpers.CreateGroup("响应报文（十六进制）");
+        GroupBox responseGroup = UiHelpers.CreateGroup("响应历史（时间戳：十六进制）");
         responseGroup.Controls.Add(_responseHexBox);
         GroupBox parsedGroup = UiHelpers.CreateGroup("解析结果");
         parsedGroup.Controls.Add(_parsedValueBox);
@@ -367,9 +367,10 @@ public sealed partial class MainForm
     }
 
     /// <summary>
-    /// 从报文日志中刷新主站请求历史。历史只保留最近 200 条，避免长时间轮询导致界面文本无限增长。
+    /// 从报文日志中刷新主站请求和响应历史。
+    /// 两类历史都只保留最近 200 条，避免长时间轮询导致界面文本无限增长。
     /// </summary>
-    private void RefreshRequestHistory()
+    private void RefreshCommunicationHistory(string? responseFallback = null)
     {
         if (_mainTabs.SelectedTab != _connectionPage)
         {
@@ -377,7 +378,7 @@ public sealed partial class MainForm
         }
 
         long revision = _services.LogService.Revision;
-        if (revision == _lastRequestHistoryRevision)
+        if (revision == _lastRequestHistoryRevision && responseFallback is null)
         {
             return;
         }
@@ -386,7 +387,7 @@ public sealed partial class MainForm
         IReadOnlyList<ModbusLogRecord> records = _services.LogService.GetSnapshot(
             limit: 5000,
             newestFirst: true);
-        string[] lines = records
+        string[] requestLines = records
             .Where(record => record.Role == ModbusRole.Master
                 && record.Direction == DataDirection.Tx)
             .Take(200)
@@ -395,9 +396,25 @@ public sealed partial class MainForm
                 $"{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff} : {record.Hex}")
             .ToArray();
 
-        _requestHexBox.Text = string.Join(Environment.NewLine, lines);
+        string[] responseLines = records
+            .Where(record => record.Role == ModbusRole.Master
+                && record.Direction == DataDirection.Rx)
+            .Take(200)
+            .Reverse()
+            .Select(record =>
+                $"{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff} : {record.Hex}")
+            .ToArray();
+
+        _requestHexBox.Text = string.Join(Environment.NewLine, requestLines);
+        _responseHexBox.Text = responseLines.Length > 0
+            ? string.Join(Environment.NewLine, responseLines)
+            : string.IsNullOrWhiteSpace(responseFallback)
+                ? string.Empty
+                : $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} : {responseFallback}";
         _requestHexBox.SelectionStart = 0;
         _requestHexBox.SelectionLength = 0;
+        _responseHexBox.SelectionStart = 0;
+        _responseHexBox.SelectionLength = 0;
     }
 
     private static TableLayoutPanel AddUnit(Control input, string unit)
@@ -813,10 +830,9 @@ public sealed partial class MainForm
         }
         catch (ModbusCommunicationException exception)
         {
-            _responseHexBox.Text = exception.ResponseHex ?? string.Empty;
             _parsedValueBox.Text = exception.GetDisplayMessage();
             _elapsedLabel.Text = "耗时：-- ms";
-            RefreshRequestHistory();
+            RefreshCommunicationHistory(exception.ResponseHex);
             MessageBox.Show(
                 this,
                 exception.GetDisplayMessage(),
@@ -837,9 +853,8 @@ public sealed partial class MainForm
 
     private void ShowOperationResult(ModbusOperationResult result, ushort protocolAddress)
     {
-        _responseHexBox.Text = result.ResponseHex;
         _elapsedLabel.Text = $"耗时：{result.ElapsedMilliseconds} ms";
-        RefreshRequestHistory();
+        RefreshCommunicationHistory(result.ResponseHex);
         ModbusFunction function = result.Function;
         AddressBase addressBase = UiHelpers.GetSelectedValue(
             _addressBaseCombo,
