@@ -28,7 +28,7 @@ Git 规范：单个功能点完成后小粒度 git commit。
 - 目标框架为 `.NET 8`，界面为 WinForms。
 - Modbus 通信固定使用 `NModbus` 与 `NModbus.Serial` 3.0.83，采用 3.0.x 的主站和从站 API。
 - 图表固定使用 `WinForms.DataVisualization` 1.10.2。
-- 除上述 NuGet 包和 .NET 内置库外，不引入第三方依赖。
+- 配置持久化允许使用 `Microsoft.Data.Sqlite`；除 Modbus、图表和 SQLite 依赖外，不引入其他第三方依赖。
 - 解决方案分为 `Core`、`Communication`、`Business`、`WinForms` 四个项目。
 
 ## 分层约束

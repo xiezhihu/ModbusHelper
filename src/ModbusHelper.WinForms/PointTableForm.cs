@@ -60,9 +60,9 @@ internal sealed class PointTableForm : Form
     {
         _toolTip.SetToolTip(
             _grid,
-            "双击点位可生成轮询任务；数据类型和字节序用于解析寄存器原始值。");
+            "按 Ctrl 或 Shift 可多选点位并批量删除；双击点位可生成轮询任务。点位表只支持读取功能码 01、02、03、04。");
         SetButtonToolTip("新增点位", "新增一条点位配置。");
-        SetButtonToolTip("删除点位", "删除当前选中的点位。");
+        SetButtonToolTip("删除点位", "删除所有选中的点位；按 Ctrl 或 Shift 可选择多行。");
         SetButtonToolTip("生成轮询任务", "按当前选中点位生成一条轮询任务。");
         SetButtonToolTip("保存点位表", "保存当前点位配置并返回主窗体。");
     }
@@ -137,6 +137,8 @@ internal sealed class PointTableForm : Form
         _grid.AutoGenerateColumns = false;
         _grid.AllowUserToAddRows = false;
         _grid.RowHeadersVisible = false;
+        _grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        _grid.MultiSelect = true;
         _grid.BackgroundColor = Color.White;
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
         UiHelpers.ConfigureGridMetrics(_grid);
@@ -176,6 +178,7 @@ internal sealed class PointTableForm : Form
             Width = UiHelpers.Scale(_grid, 174),
             MinimumWidth = UiHelpers.Scale(_grid, 160),
             DataSource = Enum.GetValues<ModbusFunction>()
+                .Where(function => !function.IsWrite())
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
                     UiHelpers.ShortFunctionText(function)))
@@ -312,7 +315,19 @@ internal sealed class PointTableForm : Form
 
     private void DeletePoint()
     {
-        if (_grid.CurrentRow?.DataBoundItem is PointConfiguration point)
+        List<PointConfiguration> selectedPoints = _grid.SelectedRows
+            .Cast<DataGridViewRow>()
+            .Select(row => row.DataBoundItem)
+            .OfType<PointConfiguration>()
+            .Distinct()
+            .ToList();
+        if (selectedPoints.Count == 0
+            && _grid.CurrentRow?.DataBoundItem is PointConfiguration currentPoint)
+        {
+            selectedPoints.Add(currentPoint);
+        }
+
+        foreach (PointConfiguration point in selectedPoints)
         {
             _points.Remove(point);
         }

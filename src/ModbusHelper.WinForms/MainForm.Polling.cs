@@ -119,6 +119,7 @@ public sealed partial class MainForm
             Width = 174,
             MinimumWidth = 160,
             DataSource = Enum.GetValues<ModbusFunction>()
+                .Where(function => !function.IsWrite())
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
                     UiHelpers.ShortFunctionText(function)))
@@ -494,7 +495,7 @@ public sealed partial class MainForm
         RebuildTrendSeries();
     }
 
-    private void OpenPointTable()
+    private async void OpenPointTable()
     {
         using PointTableForm dialog = new(
             _configuration.Points,
@@ -505,31 +506,45 @@ public sealed partial class MainForm
         }
 
         _configuration.Points = dialog.Points.ToList();
-        if (dialog.SelectedPoint is null)
+        if (dialog.SelectedPoint is not null)
         {
-            return;
+            PointConfiguration point = dialog.SelectedPoint;
+            PollingTaskConfiguration task = new()
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = point.Name,
+                Enabled = true,
+                Function = point.Function,
+                UnitId = point.UnitId,
+                StartAddress = point.StartAddress,
+                Count = point.Count,
+                IntervalMilliseconds = 1000,
+                DataType = point.DataType,
+                ByteOrder = point.ByteOrder,
+                PointId = point.Id,
+                ShowInTrend = point.ShowInTrend,
+                TrendColorArgb = point.TrendColorArgb
+            };
+            _pollingTaskBindings.Add(task);
+            RebuildTrendSeries();
         }
 
-        PointConfiguration point = dialog.SelectedPoint;
-        PollingTaskConfiguration task = new()
+        try
         {
-            Id = Guid.NewGuid().ToString("N"),
-            Name = point.Name,
-            Enabled = true,
-            Function = point.Function,
-            UnitId = point.UnitId,
-            StartAddress = point.StartAddress,
-            Count = point.Count,
-            IntervalMilliseconds = 1000,
-            DataType = point.DataType,
-            ByteOrder = point.ByteOrder,
-            PointId = point.Id,
-            ShowInTrend = point.ShowInTrend,
-            TrendColorArgb = point.TrendColorArgb
-        };
-        _pollingTaskBindings.Add(task);
-        CapturePollingConfiguration();
-        RebuildTrendSeries();
+            CaptureConfigurationFromControls();
+            await _services.SaveConfigurationAsync();
+            _statusPollingLabel.Text = "配置已保存到 ModbusHelper.db";
+            _statusPollingLabel.ForeColor = Color.DarkGreen;
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                $"保存点位表失败：{exception.Message}",
+                "配置保存失败",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
     }
 
     private void UpdatePollingTaskState(PollingTaskStateChangedEventArgs args)

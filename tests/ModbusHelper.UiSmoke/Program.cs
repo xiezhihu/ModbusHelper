@@ -26,8 +26,8 @@ internal static class Program
             : "COM2";
         string testConfigurationPath = Path.Combine(
             Path.GetTempPath(),
-            $"modbus-helper-ui-smoke-{Guid.NewGuid():N}.json");
-        Environment.SetEnvironmentVariable("MODBUSHELPER_CONFIG_PATH", testConfigurationPath);
+            $"modbus-helper-ui-smoke-{Guid.NewGuid():N}.db");
+        Environment.SetEnvironmentVariable("MODBUSHELPER_DATABASE_PATH", testConfigurationPath);
         ApplicationConfiguration.Initialize();
         Assembly assembly = Assembly.Load("ModbusHelper.WinForms");
         Type compositionRoot = assembly.GetType(
@@ -80,9 +80,13 @@ internal static class Program
         CheckAllTabs(form, tabs, outputDirectory, "小窗口布局报告.txt");
         form.Close();
         Pump(TimeSpan.FromSeconds(2));
-        if (File.Exists(testConfigurationPath))
+        foreach (string suffix in new[] { string.Empty, "-shm", "-wal" })
         {
-            File.Delete(testConfigurationPath);
+            string path = testConfigurationPath + suffix;
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
 
         Console.WriteLine(useRtu
@@ -180,6 +184,8 @@ internal static class Program
         {
             throw new InvalidOperationException("轮询任务表未启用整行多选。");
         }
+
+        AssertReadOnlyFunctionOptions(pollingGrid, 2);
 
         pollingGrid.ClearSelection();
         if (pollingGrid.Rows.Count >= 2)
@@ -279,15 +285,73 @@ internal static class Program
             binder: null,
             args: new object[]
             {
-                new List<PointConfiguration>(),
+                Enumerable.Range(1, 3)
+                    .Select(index => new PointConfiguration
+                    {
+                        Id = $"smoke-point-{index}",
+                        Name = $"冒烟点位 {index}",
+                        Function = ModbusFunction.ReadHoldingRegisters,
+                        StartAddress = (ushort)(index - 1)
+                    })
+                    .ToList(),
                 AddressBase.ZeroBased
             },
             culture: null)!;
         form.Show();
         Pump(TimeSpan.FromMilliseconds(250));
+        DataGridView grid = GetField<DataGridView>(form, "_grid");
+        if (!grid.MultiSelect || grid.SelectionMode != DataGridViewSelectionMode.FullRowSelect)
+        {
+            throw new InvalidOperationException("点位表未启用整行多选。");
+        }
+
+        AssertReadOnlyFunctionOptions(grid, 2);
         SavePage(form, outputDirectory, "9-点位表.png");
         CheckLayoutWindow(form);
+
+        grid.ClearSelection();
+        grid.Rows[0].Selected = true;
+        grid.Rows[2].Selected = true;
+        (FindButton(form, "删除点位")
+            ?? throw new InvalidOperationException("未找到删除点位按钮。")).PerformClick();
+        IReadOnlyList<PointConfiguration> remaining = (IReadOnlyList<PointConfiguration>)(
+            form.GetType().GetProperty(
+                "Points",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
+            .GetValue(form)!);
+        if (remaining.Count != 1 || remaining[0].Id != "smoke-point-2")
+        {
+            throw new InvalidOperationException("点位表多选删除没有只保留未选中的点位。");
+        }
+
         form.Close();
+    }
+
+    private static void AssertReadOnlyFunctionOptions(DataGridView grid, int columnIndex)
+    {
+        if (grid.Columns[columnIndex] is not DataGridViewComboBoxColumn column
+            || column.DataSource is not System.Collections.IEnumerable options)
+        {
+            throw new InvalidOperationException("未找到读功能码下拉列表。");
+        }
+
+        ModbusFunction[] functions = options
+            .Cast<object>()
+            .Select(option => (ModbusFunction)option.GetType()
+                .GetProperty("Value")!
+                .GetValue(option)!)
+            .ToArray();
+        ModbusFunction[] expected =
+        {
+            ModbusFunction.ReadCoils,
+            ModbusFunction.ReadDiscreteInputs,
+            ModbusFunction.ReadHoldingRegisters,
+            ModbusFunction.ReadInputRegisters
+        };
+        if (!functions.SequenceEqual(expected))
+        {
+            throw new InvalidOperationException("轮询和点位表功能码必须仅包含 01 至 04 读取功能码。");
+        }
     }
 
     private static void SavePage(Form form, string outputDirectory, string fileName)

@@ -28,7 +28,8 @@
 - Master/Slave、TX/RX 完整报文日志，暂停、过滤、搜索、CSV/TXT 导出。
 - 固定容量无锁 SPSC 趋势缓冲区，200 毫秒 UI Timer 批量刷新。
 - 字节序自动探测、范围高亮、推荐和一键应用。
-- 配置文件版本化、字符串枚举、运行时状态隔离和关闭时自动保存。
+- SQLite 配置数据库与 EXE 同目录，保存连接、轮询、点位、解析、趋势容量和从站设置。
+- 首次启动自动迁移旧 JSON 配置；连接状态、轮询运行状态、实时趋势点和内存日志不持久化。
 
 ## 依赖版本
 
@@ -36,6 +37,7 @@
 - `NModbus.Serial` 3.0.83
 - `System.IO.Ports` 8.0.0，属于 .NET 平台库
 - `WinForms.DataVisualization` 1.10.2
+- `Microsoft.Data.Sqlite` 8.0.31
 
 ## 构建与启动
 

@@ -67,5 +67,7 @@
 
 - 串口、`TcpClient`、网络流和主站实例均实现可重复安全释放。
 - 断开连接主动释放资源，窗体关闭和对象释放路径再提供兜底。
-- 配置文件使用 JSON，必须包含 `ConfigVersion`，枚举采用字符串序列化。
-- 默认配置路径为 `%LocalAppData%\ModbusHelper\config.json`。
+- 应用配置和点位表使用与 EXE 同目录的 `ModbusHelper.db` 持久化，数据库保存配置版本；
+  枚举按字符串存储。旧 `%LocalAppData%\ModbusHelper\config.json` 在首次启动时迁移。
+- 持久化连接参数、轮询任务、点位表、地址基准、解析设置、趋势容量和从站模拟配置；
+  不持久化连接/轮询运行状态、实时趋势样本、通信统计和内存日志。

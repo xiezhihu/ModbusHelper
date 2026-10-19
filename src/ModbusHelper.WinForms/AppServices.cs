@@ -16,7 +16,7 @@ internal sealed class AppServices : IAsyncDisposable
 {
     private AppServices(
         AppConfiguration configuration,
-        JsonConfigurationStore configurationStore,
+        SqliteConfigurationStore configurationStore,
         ModbusLogService logService,
         ConnectionManager connectionManager,
         TrendDataStore trendDataStore,
@@ -38,7 +38,7 @@ internal sealed class AppServices : IAsyncDisposable
 
     public AppConfiguration Configuration { get; }
 
-    public JsonConfigurationStore ConfigurationStore { get; }
+    public SqliteConfigurationStore ConfigurationStore { get; }
 
     public ModbusLogService LogService { get; }
 
@@ -56,9 +56,16 @@ internal sealed class AppServices : IAsyncDisposable
 
     public static async Task<AppServices> CreateAsync(CancellationToken cancellationToken = default)
     {
-        string? configurationPathOverride =
-            Environment.GetEnvironmentVariable("MODBUSHELPER_CONFIG_PATH");
-        JsonConfigurationStore store = new(configurationPathOverride);
+        string? databasePathOverride =
+            Environment.GetEnvironmentVariable("MODBUSHELPER_DATABASE_PATH");
+        string databasePath = string.IsNullOrWhiteSpace(databasePathOverride)
+            ? Path.Combine(AppContext.BaseDirectory, "ModbusHelper.db")
+            : Path.GetFullPath(databasePathOverride);
+        string legacyConfigurationPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ModbusHelper",
+            "config.json");
+        SqliteConfigurationStore store = new(databasePath, legacyConfigurationPath);
         AppConfiguration configuration;
         string? warning = null;
         try

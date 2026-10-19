@@ -973,7 +973,9 @@ static async Task TestConfigurationRoundTrip()
 {
     string directory = Path.Combine(Path.GetTempPath(), "ModbusHelperVerification");
     Directory.CreateDirectory(directory);
-    string path = Path.Combine(directory, $"config-{Guid.NewGuid():N}.json");
+    string name = $"config-{Guid.NewGuid():N}";
+    string path = Path.Combine(directory, $"{name}.json");
+    string databasePath = Path.Combine(directory, $"{name}.db");
 
     try
     {
@@ -1016,12 +1018,35 @@ static async Task TestConfigurationRoundTrip()
         Equal(1234, loaded.TrendCapacity);
         Equal("温度", loaded.Points[0].Name);
         Equal(1, loaded.SlaveSimulator.Units[0].ExceptionRules.Count);
+
+        SqliteConfigurationStore sqliteStore = new(databasePath, path);
+        AppConfiguration migrated = await sqliteStore.LoadAsync();
+        Equal(AddressBase.OneBased, migrated.AddressBase);
+        Equal(ConnectionType.Rtu, migrated.Connection.Type);
+        Equal("温度", migrated.Points[0].Name);
+        False(migrated.Connection.IsConnected);
+        False(migrated.PollingTasks[0].IsRunning);
+
+        migrated.Connection.IsConnected = true;
+        migrated.PollingTasks[0].IsRunning = true;
+        migrated.Points[0].Name = "压力";
+        await sqliteStore.SaveAsync(migrated);
+        AppConfiguration sqliteLoaded = await sqliteStore.LoadAsync();
+        Equal("压力", sqliteLoaded.Points[0].Name);
+        Equal(AddressBase.OneBased, sqliteLoaded.AddressBase);
+        False(sqliteLoaded.Connection.IsConnected);
+        False(sqliteLoaded.PollingTasks[0].IsRunning);
     }
     finally
     {
         if (File.Exists(path))
         {
             File.Delete(path);
+        }
+
+        if (File.Exists(databasePath))
+        {
+            File.Delete(databasePath);
         }
     }
 }

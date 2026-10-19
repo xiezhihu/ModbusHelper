@@ -214,7 +214,8 @@ public sealed partial class MainForm : Form
         SetToolTip(_parsedValueBox, "显示当前这次操作的解析结果；寄存器会列出原始 ushort 和转换值，线圈或离散输入会按请求起始地址递增列出地址和值。");
 
         SetToolTip(_pollingGrid, "支持 Ctrl 或 Shift 多选任务；双击单元格可编辑任务参数。");
-        SetGridToolTip(_pollingGrid, "启用", "任务是否参与启动全部和周期轮询。");
+        SetGridToolTip(_pollingGrid, "启用", "允许此任务被启动；勾选不代表已经运行。启动选中和启动全部只会启动已启用任务。");
+        SetGridToolTip(_pollingGrid, "功能码", "轮询只执行读取功能码 01、02、03、04；写入请使用主站连接与读写页。");
         SetGridToolTip(_pollingGrid, "起始地址", "按当前地址基准显示，实际发送前转换为 0 基协议地址。");
         SetGridToolTip(_pollingGrid, "间隔毫秒", "周期轮询间隔，最小 100 毫秒；同一连接下任务会串行执行。");
         SetGridToolTip(_pollingGrid, "数据类型", "将寄存器原始值解析为 Int16、UInt32、Float、字符串等类型。");
