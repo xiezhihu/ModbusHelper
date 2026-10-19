@@ -94,6 +94,14 @@ internal sealed class PointTableForm : Form
         _grid.AllowUserToAddRows = false;
         _grid.RowHeadersVisible = false;
         _grid.BackgroundColor = Color.White;
+        _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+        _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+        _grid.RowTemplate.Height = 30;
+        _grid.ColumnHeadersHeight = 34;
+        _grid.ColumnHeadersHeightSizeMode =
+            DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        _grid.ColumnHeadersDefaultCellStyle.Alignment =
+            DataGridViewContentAlignment.MiddleCenter;
         _grid.DataSource = _points;
         _grid.CellFormatting += OnGridCellFormatting;
         _grid.CellParsing += OnGridCellParsing;
@@ -109,14 +117,17 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.Name),
             HeaderText = "点位名称",
+            Width = 220,
             MinimumWidth = 160,
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            FillWeight = 28F
         });
         _grid.Columns.Add(new DataGridViewTextBoxColumn
         {
             DataPropertyName = nameof(PointConfiguration.UnitId),
             HeaderText = "从站",
             Width = 60,
+            MinimumWidth = 58,
             ValueType = typeof(byte)
         });
         _grid.Columns.Add(new DataGridViewComboBoxColumn
@@ -124,6 +135,7 @@ internal sealed class PointTableForm : Form
             DataPropertyName = nameof(PointConfiguration.Function),
             HeaderText = "功能码",
             Width = 150,
+            MinimumWidth = 136,
             DataSource = Enum.GetValues<ModbusFunction>()
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
@@ -139,6 +151,7 @@ internal sealed class PointTableForm : Form
             DataPropertyName = nameof(PointConfiguration.StartAddress),
             HeaderText = "起始地址",
             Width = 90,
+            MinimumWidth = 82,
             ValueType = typeof(ushort)
         });
         _grid.Columns.Add(new DataGridViewTextBoxColumn
@@ -146,6 +159,7 @@ internal sealed class PointTableForm : Form
             DataPropertyName = nameof(PointConfiguration.Count),
             HeaderText = "数量",
             Width = 62,
+            MinimumWidth = 58,
             ValueType = typeof(ushort)
         });
         _grid.Columns.Add(new DataGridViewComboBoxColumn
@@ -153,6 +167,7 @@ internal sealed class PointTableForm : Form
             DataPropertyName = nameof(PointConfiguration.DataType),
             HeaderText = "数据类型",
             Width = 105,
+            MinimumWidth = 96,
             DataSource = Enum.GetValues<DataValueType>()
                 .Select(type => new UiOption<DataValueType>(type, UiHelpers.DataTypeText(type)))
                 .ToArray(),
@@ -164,8 +179,9 @@ internal sealed class PointTableForm : Form
         _grid.Columns.Add(new DataGridViewComboBoxColumn
         {
             DataPropertyName = nameof(PointConfiguration.ByteOrder),
-            HeaderText = "数据布局",
-            Width = 80,
+            HeaderText = "字节序",
+            Width = 96,
+            MinimumWidth = 88,
             DataSource = Enum.GetValues<RegisterByteOrder>()
                 .Select(order => new UiOption<RegisterByteOrder>(
                     order,
@@ -181,6 +197,7 @@ internal sealed class PointTableForm : Form
             DataPropertyName = nameof(PointConfiguration.ShowInTrend),
             HeaderText = "趋势",
             Width = 56,
+            MinimumWidth = 54,
             ValueType = typeof(bool)
         });
     }

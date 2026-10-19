@@ -73,10 +73,11 @@ public sealed partial class MainForm
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2
+            RowCount = 2,
+            Padding = new Padding(0, 0, 4, 0)
         };
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
+        left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         left.Controls.Add(CreateMasterConnectionGroup(), 0, 0);
         left.Controls.Add(CreateAddressBaseGroup(), 0, 1);
         split.Panel1.Controls.Add(left);
@@ -86,10 +87,11 @@ public sealed partial class MainForm
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3,
-            AutoScroll = true
+            AutoScroll = true,
+            Padding = new Padding(0)
         };
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 296F));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+        right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         right.Controls.Add(CreateManualParameterGroup(), 0, 0);
 
@@ -162,11 +164,17 @@ public sealed partial class MainForm
     private GroupBox CreateMasterConnectionGroup()
     {
         GroupBox group = UiHelpers.CreateGroup("主站连接");
+        group.Dock = DockStyle.Top;
+        group.AutoSize = true;
+        group.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        group.Padding = new Padding(8, 6, 8, 8);
         Panel scroll = new()
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoScroll = true,
-            Padding = new Padding(4)
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(0)
         };
         TableLayoutPanel table = new()
         {
@@ -209,23 +217,20 @@ public sealed partial class MainForm
         timeoutGroup.Controls.Add(timeoutTable);
         table.Controls.Add(timeoutGroup);
 
-        TableLayoutPanel buttons = new()
+        FlowLayoutPanel buttons = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 2,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0),
             AutoSize = true
         };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-        buttons.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
-        buttons.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
-        buttons.Controls.Add(_connectButton, 0, 0);
-        buttons.Controls.Add(_disconnectButton, 1, 0);
-        buttons.Controls.Add(_connectionStateLabel, 0, 1);
-        buttons.SetColumnSpan(_connectionStateLabel, 2);
-        _connectionStateLabel.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _connectionStateLabel.AutoSize = true;
         _connectionStateLabel.AutoEllipsis = true;
+        _connectionStateLabel.Margin = new Padding(8, 10, 4, 4);
+        buttons.Controls.Add(_connectButton);
+        buttons.Controls.Add(_disconnectButton);
+        buttons.Controls.Add(_connectionStateLabel);
         buttons.Margin = new Padding(4, 8, 4, 4);
         table.Controls.Add(buttons);
 
@@ -239,7 +244,7 @@ public sealed partial class MainForm
     private void ConfigureRtuPanel()
     {
         TableLayoutPanel table = UiHelpers.CreateFieldTable(5, autoSize: true);
-        table.ColumnStyles[0].Width = 78F;
+        table.ColumnStyles[0].Width = 92F;
         table.Dock = DockStyle.Top;
         table.AutoSize = true;
         TableLayoutPanel portRow = new()
@@ -263,7 +268,7 @@ public sealed partial class MainForm
     private void ConfigureTcpPanel()
     {
         TableLayoutPanel table = UiHelpers.CreateFieldTable(3, autoSize: true);
-        table.ColumnStyles[0].Width = 78F;
+        table.ColumnStyles[0].Width = 92F;
         table.Dock = DockStyle.Top;
         table.AutoSize = true;
         UiHelpers.AddField(table, 0, "主机", _tcpHostInput);
@@ -275,13 +280,21 @@ public sealed partial class MainForm
     private GroupBox CreateAddressBaseGroup()
     {
         GroupBox group = UiHelpers.CreateGroup("地址基准");
+        group.Dock = DockStyle.Top;
+        group.AutoSize = true;
+        group.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        group.Padding = new Padding(8, 4, 8, 4);
         TableLayoutPanel layout = new()
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             ColumnCount = 2,
-            RowCount = 1
+            RowCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(0)
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92F));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         layout.Controls.Add(UiHelpers.CreateLabel("界面基准"), 0, 0);
         layout.Controls.Add(_addressBaseCombo, 1, 0);
@@ -292,8 +305,11 @@ public sealed partial class MainForm
     private GroupBox CreateManualParameterGroup()
     {
         GroupBox group = UiHelpers.CreateGroup("手动读写参数");
-        TableLayoutPanel table = UiHelpers.CreateFieldTable(7);
-        table.ColumnStyles[0].Width = 92F;
+        group.Dock = DockStyle.Top;
+        group.AutoSize = true;
+        group.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        TableLayoutPanel table = UiHelpers.CreateFieldTable(7, autoSize: true);
+        table.ColumnStyles[0].Width = 126F;
         _manualParameterTable = table;
         UiHelpers.AddField(table, 0, "功能码", _manualFunctionCombo);
         UiHelpers.AddField(table, 1, "从站地址", _manualUnitInput);
@@ -485,9 +501,7 @@ public sealed partial class MainForm
         {
             ConnectionState.Disconnected => "未连接",
             ConnectionState.Connecting => "连接中",
-            ConnectionState.Connected => _configuration.Connection.Type == ConnectionType.Rtu
-                ? $"已连接 {_configuration.Connection.Rtu.PortName}"
-                : $"已连接 {_configuration.Connection.Tcp.Host}:{_configuration.Connection.Tcp.Port}",
+            ConnectionState.Connected => "已连接",
             ConnectionState.Disconnecting => "断开中",
             ConnectionState.Faulted => "故障",
             _ => state.ToString()

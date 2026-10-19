@@ -77,6 +77,15 @@ public sealed partial class MainForm
         _pollingGrid.MultiSelect = false;
         _pollingGrid.BackgroundColor = Color.White;
         _pollingGrid.EditMode = DataGridViewEditMode.EditOnEnter;
+        _pollingGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+        _pollingGrid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+        _pollingGrid.RowTemplate.Height = 30;
+        _pollingGrid.ColumnHeadersHeight = 34;
+        _pollingGrid.ColumnHeadersHeightSizeMode =
+            DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        _pollingGrid.ColumnHeadersDefaultCellStyle.Alignment =
+            DataGridViewContentAlignment.MiddleCenter;
+        _pollingGrid.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
         _pollingGrid.DataSource = _pollingTaskBindings;
         _pollingGrid.CellFormatting += OnPollingGridCellFormatting;
         _pollingGrid.CellParsing += OnPollingGridCellParsing;
@@ -92,7 +101,9 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.Enabled),
             HeaderText = "启用",
-            Width = 60,
+            Width = 58,
+            MinimumWidth = 58,
+            Frozen = true,
             ValueType = typeof(bool),
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
@@ -100,15 +111,18 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.Name),
             HeaderText = "任务名称",
-            MinimumWidth = 140,
+            Width = 180,
+            MinimumWidth = 150,
             AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            FillWeight = 24F,
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
         DataGridViewComboBoxColumn functionColumn = new()
         {
             DataPropertyName = nameof(PollingTaskConfiguration.Function),
             HeaderText = "功能码",
-            Width = 130,
+            Width = 174,
+            MinimumWidth = 160,
             DataSource = Enum.GetValues<ModbusFunction>()
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
@@ -125,7 +139,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.UnitId),
             HeaderText = "从站",
-            Width = 58,
+            Width = 60,
+            MinimumWidth = 58,
             ValueType = typeof(byte),
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
@@ -133,7 +148,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.StartAddress),
             HeaderText = "起始地址",
-            Width = 92,
+            Width = 90,
+            MinimumWidth = 82,
             ValueType = typeof(ushort),
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
@@ -142,6 +158,7 @@ public sealed partial class MainForm
             DataPropertyName = nameof(PollingTaskConfiguration.Count),
             HeaderText = "数量",
             Width = 64,
+            MinimumWidth = 58,
             ValueType = typeof(ushort),
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
@@ -149,7 +166,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.IntervalMilliseconds),
             HeaderText = "间隔毫秒",
-            Width = 82,
+            Width = 96,
+            MinimumWidth = 90,
             ValueType = typeof(int),
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
@@ -157,7 +175,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.DataType),
             HeaderText = "数据类型",
-            Width = 88,
+            Width = 102,
+            MinimumWidth = 92,
             DataSource = Enum.GetValues<DataValueType>()
                 .Select(type => new UiOption<DataValueType>(type, UiHelpers.DataTypeText(type)))
                 .ToArray(),
@@ -171,8 +190,9 @@ public sealed partial class MainForm
         DataGridViewComboBoxColumn byteOrderColumn = new()
         {
             DataPropertyName = nameof(PollingTaskConfiguration.ByteOrder),
-            HeaderText = "数据布局",
-            Width = 76,
+            HeaderText = "字节序",
+            Width = 96,
+            MinimumWidth = 88,
             DataSource = Enum.GetValues<RegisterByteOrder>()
                 .Select(order => new UiOption<RegisterByteOrder>(
                     order,
@@ -189,7 +209,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.ShowInTrend),
             HeaderText = "趋势",
-            Width = 54,
+            Width = 58,
+            MinimumWidth = 54,
             ValueType = typeof(bool),
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
@@ -197,7 +218,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.TrendVisible),
             HeaderText = "显示",
-            Width = 54,
+            Width = 58,
+            MinimumWidth = 54,
             ValueType = typeof(bool),
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
@@ -205,7 +227,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.IsRunning),
             HeaderText = "运行",
-            Width = 54,
+            Width = 58,
+            MinimumWidth = 54,
             ValueType = typeof(bool),
             ReadOnly = true,
             SortMode = DataGridViewColumnSortMode.NotSortable

@@ -150,7 +150,12 @@ internal static class UiHelpers
 
     public static void AddField(TableLayoutPanel table, int row, string label, Control control)
     {
-        table.Controls.Add(CreateLabel(label), 0, row);
+        Label fieldLabel = CreateLabel(label);
+        fieldLabel.AutoSize = false;
+        fieldLabel.Dock = DockStyle.Fill;
+        fieldLabel.TextAlign = ContentAlignment.MiddleLeft;
+        fieldLabel.Margin = new Padding(4, 2, 4, 2);
+        table.Controls.Add(fieldLabel, 0, row);
         table.Controls.Add(control, 1, row);
     }
 
