@@ -222,7 +222,7 @@ internal static class Program
         form.Show();
         Pump(TimeSpan.FromMilliseconds(250));
         SavePage(form, outputDirectory, "8-字节序探测.png");
-        CheckLayout(form);
+        CheckLayoutWindow(form);
         form.Close();
     }
 
@@ -245,7 +245,7 @@ internal static class Program
         form.Show();
         Pump(TimeSpan.FromMilliseconds(250));
         SavePage(form, outputDirectory, "9-点位表.png");
-        CheckLayout(form);
+        CheckLayoutWindow(form);
         form.Close();
     }
 
@@ -307,12 +307,28 @@ internal static class Program
 
     private static void CheckLayout(Control page)
     {
-        if (page.Width < 800 || page.Height < 500)
+        if (page is TabPage && (page.Width < 800 || page.Height < 500))
         {
             throw new InvalidOperationException(
                 $"页签“{page.Text}”可用尺寸过小：{page.Width}x{page.Height}。");
         }
 
+        CheckLayoutCore(page);
+    }
+
+    private static void CheckLayoutWindow(Form form)
+    {
+        if (form.Width < 800 || form.Height < 500)
+        {
+            throw new InvalidOperationException(
+                $"窗口“{form.Text}”可用尺寸过小：{form.Width}x{form.Height}。");
+        }
+
+        CheckLayoutCore(form);
+    }
+
+    private static void CheckLayoutCore(Control page)
+    {
         List<string> issues = new();
         foreach (Control control in EnumerateControls(page))
         {
@@ -339,6 +355,22 @@ internal static class Program
                         $"按钮文字被裁切：{DescribePath(button)}，"
                         + $"控件 {button.ClientSize.Width}x{button.ClientSize.Height}，"
                         + $"文字需求 {measured.Width}x{measured.Height}");
+                }
+            }
+
+            if (IsEffectivelyVisible(control) && control is GroupBox groupBox
+                && !string.IsNullOrWhiteSpace(groupBox.Text))
+            {
+                int minimumWidth = TextRenderer.MeasureText(
+                    groupBox.Text,
+                    groupBox.Font,
+                    new Size(int.MaxValue, int.MaxValue),
+                    TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width + 28;
+                if (groupBox.ClientSize.Width < minimumWidth)
+                {
+                    issues.Add(
+                        $"分组标题空间不足：{DescribePath(groupBox)}，"
+                        + $"控件宽 {groupBox.ClientSize.Width}，至少需要 {minimumWidth}");
                 }
             }
 
