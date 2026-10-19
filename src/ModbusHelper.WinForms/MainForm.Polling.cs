@@ -92,7 +92,7 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.Enabled),
             HeaderText = "启用",
-            Width = 52,
+            Width = 60,
             ValueType = typeof(bool),
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
@@ -100,18 +100,19 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.Name),
             HeaderText = "任务名称",
-            Width = 150,
+            MinimumWidth = 140,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
             SortMode = DataGridViewColumnSortMode.NotSortable
         });
         DataGridViewComboBoxColumn functionColumn = new()
         {
             DataPropertyName = nameof(PollingTaskConfiguration.Function),
             HeaderText = "功能码",
-            Width = 150,
+            Width = 130,
             DataSource = Enum.GetValues<ModbusFunction>()
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
-                    function.GetChineseName()))
+                    UiHelpers.ShortFunctionText(function)))
                 .ToArray(),
             DisplayMember = nameof(UiOption<ModbusFunction>.Text),
             ValueMember = nameof(UiOption<ModbusFunction>.Value),
@@ -156,7 +157,7 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.DataType),
             HeaderText = "数据类型",
-            Width = 94,
+            Width = 88,
             DataSource = Enum.GetValues<DataValueType>()
                 .Select(type => new UiOption<DataValueType>(type, UiHelpers.DataTypeText(type)))
                 .ToArray(),
@@ -171,11 +172,11 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.ByteOrder),
             HeaderText = "数据布局",
-            Width = 110,
+            Width = 76,
             DataSource = Enum.GetValues<RegisterByteOrder>()
                 .Select(order => new UiOption<RegisterByteOrder>(
                     order,
-                    UiHelpers.ByteOrderText(order)))
+                    UiHelpers.ShortByteOrderText(order)))
                 .ToArray(),
             DisplayMember = nameof(UiOption<RegisterByteOrder>.Text),
             ValueMember = nameof(UiOption<RegisterByteOrder>.Value),

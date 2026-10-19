@@ -14,8 +14,9 @@ public sealed partial class MainForm
 {
     private static readonly char[] SlaveMapEntrySeparators = { ',', ';', '\r', '\n' };
     private readonly ComboBox _slaveTypeCombo = UiHelpers.CreateCombo();
-    private readonly Panel _slaveRtuPanel = new() { Dock = DockStyle.Fill, AutoSize = true };
-    private readonly Panel _slaveTcpPanel = new() { Dock = DockStyle.Fill, AutoSize = true };
+    private readonly GroupBox _slaveRtuPanel = UiHelpers.CreateParameterGroup("RTU 串口参数");
+    private readonly GroupBox _slaveTcpPanel = UiHelpers.CreateParameterGroup("TCP 监听参数");
+    private readonly Panel _slaveParameterHost = new() { Dock = DockStyle.Fill };
     private readonly ComboBox _slaveSerialPortCombo = UiHelpers.CreateCombo();
     private readonly NumericUpDown _slaveBaudRateInput = UiHelpers.CreateNumber(1200, 921600, 9600);
     private readonly NumericUpDown _slaveDataBitsInput = UiHelpers.CreateNumber(5, 8, 8);
@@ -53,9 +54,9 @@ public sealed partial class MainForm
             ColumnCount = 1,
             Padding = new Padding(8)
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190F));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 55F));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 45F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 160F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 43F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 57F));
 
         root.Controls.Add(CreateSlaveEndpointGroup(), 0, 0);
         SplitContainer configSplit = new()
@@ -131,12 +132,11 @@ public sealed partial class MainForm
         TableLayoutPanel table = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 4,
+            ColumnCount = 3,
             RowCount = 1
         };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250F));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38F));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38F));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330F));
 
         TableLayoutPanel typeTable = UiHelpers.CreateFieldTable(1);
@@ -145,9 +145,10 @@ public sealed partial class MainForm
 
         ConfigureSlaveRtuPanel();
         ConfigureSlaveTcpPanel();
+        _slaveParameterHost.Controls.Add(_slaveTcpPanel);
+        _slaveParameterHost.Controls.Add(_slaveRtuPanel);
         table.Controls.Add(typeTable, 0, 0);
-        table.Controls.Add(_slaveRtuPanel, 1, 0);
-        table.Controls.Add(_slaveTcpPanel, 2, 0);
+        table.Controls.Add(_slaveParameterHost, 1, 0);
 
         FlowLayoutPanel actions = new()
         {
@@ -158,14 +159,14 @@ public sealed partial class MainForm
         actions.Controls.Add(_slaveStartButton);
         actions.Controls.Add(_slaveStopButton);
         actions.Controls.Add(_slaveStateLabel);
-        table.Controls.Add(actions, 3, 0);
+        table.Controls.Add(actions, 2, 0);
         group.Controls.Add(table);
         return group;
     }
 
     private void ConfigureSlaveRtuPanel()
     {
-        TableLayoutPanel table = UiHelpers.CreateFieldTable(4);
+        TableLayoutPanel table = UiHelpers.CreateFieldTable(4, autoSize: true);
         table.AutoSize = true;
         TableLayoutPanel portRow = new() { Dock = DockStyle.Fill, ColumnCount = 2, AutoSize = true };
         portRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -185,6 +186,7 @@ public sealed partial class MainForm
         formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
         formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 45F));
         formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
+        formatRow.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
         formatRow.Controls.Add(UiHelpers.CreateLabel("数据位"), 0, 0);
         formatRow.Controls.Add(_slaveDataBitsInput, 1, 0);
         formatRow.Controls.Add(UiHelpers.CreateLabel("校验"), 2, 0);
@@ -196,7 +198,7 @@ public sealed partial class MainForm
 
     private void ConfigureSlaveTcpPanel()
     {
-        TableLayoutPanel table = UiHelpers.CreateFieldTable(2);
+        TableLayoutPanel table = UiHelpers.CreateFieldTable(2, autoSize: true);
         table.AutoSize = true;
         UiHelpers.AddField(table, 0, "监听地址", _slaveListenAddressInput);
         UiHelpers.AddField(table, 1, "监听端口", _slaveListenPortInput);
@@ -239,8 +241,8 @@ public sealed partial class MainForm
         _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             DataPropertyName = nameof(SlaveUnitEditor.UnitId),
-            HeaderText = "UnitID",
-            Width = 62
+            HeaderText = "从站地址",
+            Width = 72
         });
         _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -321,11 +323,11 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(ExceptionRuleEditor.Function),
             HeaderText = "功能码",
-            Width = 150,
+            Width = 115,
             DataSource = Enum.GetValues<ModbusFunction>()
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
-                    function.GetChineseName()))
+                    UiHelpers.ShortFunctionText(function)))
                 .ToArray(),
             DisplayMember = nameof(UiOption<ModbusFunction>.Text),
             ValueMember = nameof(UiOption<ModbusFunction>.Value),
@@ -336,7 +338,7 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(ExceptionRuleEditor.StartAddress),
             HeaderText = "地址",
-            Width = 85,
+            Width = 78,
             ValueType = typeof(ushort)
         });
         _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
@@ -362,26 +364,38 @@ public sealed partial class MainForm
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2
+            RowCount = 3
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 184F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 112F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        TableLayoutPanel fields = UiHelpers.CreateFieldTable(5);
-        UiHelpers.AddField(fields, 0, "从站地址", _slaveManualUnitInput);
-        UiHelpers.AddField(fields, 1, "存储区域", _slaveManualAreaCombo);
-        UiHelpers.AddField(fields, 2, "起始地址", _slaveManualAddressInput);
-        UiHelpers.AddField(fields, 3, "数量", _slaveManualCountInput);
-        UiHelpers.AddField(fields, 4, "写入值", _slaveManualValuesInput);
-        layout.Controls.Add(fields, 0, 0);
-
-        TableLayoutPanel actionAndResult = new()
+        TableLayoutPanel fields = new()
         {
             Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1
+            ColumnCount = 4,
+            RowCount = 3,
+            Padding = new Padding(4)
         };
-        actionAndResult.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
-        actionAndResult.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 84F));
+        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56F));
+        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        fields.Controls.Add(UiHelpers.CreateLabel("从站地址"), 0, 0);
+        fields.Controls.Add(_slaveManualUnitInput, 1, 0);
+        fields.Controls.Add(UiHelpers.CreateLabel("存储区域"), 2, 0);
+        fields.Controls.Add(_slaveManualAreaCombo, 3, 0);
+        fields.Controls.Add(UiHelpers.CreateLabel("起始地址"), 0, 1);
+        fields.Controls.Add(_slaveManualAddressInput, 1, 1);
+        fields.Controls.Add(UiHelpers.CreateLabel("数量"), 2, 1);
+        fields.Controls.Add(_slaveManualCountInput, 3, 1);
+        fields.Controls.Add(UiHelpers.CreateLabel("写入值"), 0, 2);
+        fields.Controls.Add(_slaveManualValuesInput, 1, 2);
+        fields.SetColumnSpan(_slaveManualValuesInput, 3);
+        layout.Controls.Add(fields, 0, 0);
+
         FlowLayoutPanel actions = new()
         {
             Dock = DockStyle.Fill,
@@ -389,9 +403,9 @@ public sealed partial class MainForm
         };
         actions.Controls.Add(UiHelpers.CreateButton("读取当前值", ReadSlaveManualValues, 100));
         actions.Controls.Add(UiHelpers.CreateButton("写入模拟数据", WriteSlaveManualValues, 112));
-        actionAndResult.Controls.Add(actions, 0, 0);
-        actionAndResult.Controls.Add(_slaveManualResultBox, 0, 1);
-        layout.Controls.Add(actionAndResult, 0, 1);
+        layout.Controls.Add(actions, 0, 1);
+        layout.Controls.Add(_slaveManualResultBox, 0, 2);
+        layout.AutoScroll = true;
         group.Controls.Add(layout);
         return group;
     }
@@ -530,6 +544,7 @@ public sealed partial class MainForm
         _slaveStartButton.Enabled = !listening;
         _slaveStopButton.Enabled = listening;
         _slaveStateLabel.Text = message;
+        _slaveStateLabel.AutoEllipsis = true;
         _slaveStateLabel.ForeColor = listening
             ? Color.DarkGreen
             : message.Contains("错误", StringComparison.Ordinal)

@@ -109,7 +109,8 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.Name),
             HeaderText = "点位名称",
-            Width = 160
+            MinimumWidth = 160,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
         });
         _grid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -126,7 +127,7 @@ internal sealed class PointTableForm : Form
             DataSource = Enum.GetValues<ModbusFunction>()
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
-                    function.GetChineseName()))
+                    UiHelpers.ShortFunctionText(function)))
                 .ToArray(),
             DisplayMember = nameof(UiOption<ModbusFunction>.Text),
             ValueMember = nameof(UiOption<ModbusFunction>.Value),
@@ -164,11 +165,11 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.ByteOrder),
             HeaderText = "数据布局",
-            Width = 120,
+            Width = 80,
             DataSource = Enum.GetValues<RegisterByteOrder>()
                 .Select(order => new UiOption<RegisterByteOrder>(
                     order,
-                    UiHelpers.ByteOrderText(order)))
+                    UiHelpers.ShortByteOrderText(order)))
                 .ToArray(),
             DisplayMember = nameof(UiOption<RegisterByteOrder>.Text),
             ValueMember = nameof(UiOption<RegisterByteOrder>.Value),

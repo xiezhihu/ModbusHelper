@@ -31,11 +31,18 @@ internal static class UiHelpers
 {
     public static Button CreateButton(string text, Action action, int width = 96)
     {
+        Font font = new("Microsoft YaHei UI", 9F);
+        Size textSize = TextRenderer.MeasureText(
+            text,
+            font,
+            new Size(int.MaxValue, int.MaxValue),
+            TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
         Button button = new()
         {
             Text = text,
-            Width = width,
+            Width = Math.Max(width, textSize.Width + 28),
             Height = 30,
+            Font = font,
             Margin = new Padding(4),
             UseVisualStyleBackColor = true
         };
@@ -43,18 +50,24 @@ internal static class UiHelpers
         return button;
     }
 
-    public static Label CreateLabel(string text, bool bold = false)
+    public static Label CreateLabel(
+        string text,
+        bool bold = false,
+        ContentAlignment alignment = ContentAlignment.MiddleLeft)
     {
-        return new Label
+        Label label = new()
         {
             Text = text,
             AutoSize = true,
+            UseCompatibleTextRendering = false,
             Anchor = AnchorStyles.Left,
+            TextAlign = alignment,
             Margin = new Padding(4, 7, 4, 4),
             Font = bold
                 ? new Font("Microsoft YaHei UI", 9F, FontStyle.Bold)
                 : new Font("Microsoft YaHei UI", 9F)
         };
+        return label;
     }
 
     public static TextBox CreateTextBox(string text = "")
@@ -63,6 +76,7 @@ internal static class UiHelpers
         {
             Text = text,
             Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            MinimumSize = new Size(0, 28),
             Margin = new Padding(4)
         };
     }
@@ -75,6 +89,7 @@ internal static class UiHelpers
             Maximum = maximum,
             Value = Math.Clamp(value, minimum, maximum),
             Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            MinimumSize = new Size(0, 28),
             Margin = new Padding(4)
         };
     }
@@ -85,6 +100,7 @@ internal static class UiHelpers
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
             Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            MinimumSize = new Size(0, 28),
             Margin = new Padding(4)
         };
     }
@@ -100,14 +116,27 @@ internal static class UiHelpers
         };
     }
 
-    public static TableLayoutPanel CreateFieldTable(int rows)
+    public static GroupBox CreateParameterGroup(string text)
+    {
+        GroupBox group = CreateGroup(text);
+        group.AutoSize = true;
+        group.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        group.Dock = DockStyle.Top;
+        group.Padding = new Padding(8, 4, 8, 4);
+        group.Margin = new Padding(4, 6, 4, 6);
+        return group;
+    }
+
+    public static TableLayoutPanel CreateFieldTable(int rows, bool autoSize = false)
     {
         TableLayoutPanel table = new()
         {
-            Dock = DockStyle.Fill,
+            Dock = autoSize ? DockStyle.Top : DockStyle.Fill,
             ColumnCount = 2,
             RowCount = rows,
-            Padding = new Padding(4)
+            Padding = new Padding(2, 0, 2, 0),
+            AutoSize = autoSize,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116F));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -203,6 +232,22 @@ internal static class UiHelpers
         };
     }
 
+    public static string ShortFunctionText(ModbusFunction function)
+    {
+        return function switch
+        {
+            ModbusFunction.ReadCoils => "01 线圈",
+            ModbusFunction.ReadDiscreteInputs => "02 离散输入",
+            ModbusFunction.ReadHoldingRegisters => "03 保持寄存器",
+            ModbusFunction.ReadInputRegisters => "04 输入寄存器",
+            ModbusFunction.WriteSingleCoil => "05 写线圈",
+            ModbusFunction.WriteSingleRegister => "06 写寄存器",
+            ModbusFunction.WriteMultipleCoils => "0F 写多线圈",
+            ModbusFunction.WriteMultipleRegisters => "10 写多寄存器",
+            _ => function.ToString()
+        };
+    }
+
     public static string ByteOrderText(RegisterByteOrder order)
     {
         return order switch
@@ -213,5 +258,10 @@ internal static class UiHelpers
             RegisterByteOrder.DCBA => "DCBA（交换字序 + 字节反转）",
             _ => order.ToString()
         };
+    }
+
+    public static string ShortByteOrderText(RegisterByteOrder order)
+    {
+        return order.ToString();
     }
 }

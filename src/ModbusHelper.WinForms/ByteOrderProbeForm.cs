@@ -30,8 +30,8 @@ internal sealed class ByteOrderProbeForm : Form
         _addressBase = addressBase;
         Text = "字节序探测";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(920, 560);
-        MinimumSize = new Size(820, 500);
+        ClientSize = new Size(1040, 600);
+        MinimumSize = new Size(960, 540);
         Font = new Font("Microsoft YaHei UI", 9F);
         BackColor = Color.FromArgb(244, 247, 248);
 
@@ -65,7 +65,7 @@ internal sealed class ByteOrderProbeForm : Form
             ColumnCount = 1,
             Padding = new Padding(10)
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 118F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 146F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
@@ -85,8 +85,8 @@ internal sealed class ByteOrderProbeForm : Form
         AddInlineField(parameters, 0, "从站地址", _unitInput);
         AddInlineField(parameters, 1, "起始地址", _addressInput);
         AddInlineField(parameters, 2, "数据类型", _dataTypeCombo);
-        AddInlineField(parameters, 3, "合理范围最小", _minimumInput);
-        AddInlineField(parameters, 4, "合理范围最大", _maximumInput);
+        AddInlineField(parameters, 3, "范围最小值", _minimumInput);
+        AddInlineField(parameters, 4, "范围最大值", _maximumInput);
         parameters.Controls.Add(
             UiHelpers.CreateButton("读取并探测", () => _ = ProbeAsync(), 108),
             5,
@@ -269,7 +269,14 @@ internal sealed class ByteOrderProbeForm : Form
         };
         field.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
         field.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
-        field.Controls.Add(UiHelpers.CreateLabel(label, true), 0, 0);
+        field.Controls.Add(new Label
+        {
+            Text = label,
+            AutoSize = false,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold)
+        }, 0, 0);
         control.Dock = DockStyle.Fill;
         field.Controls.Add(control, 0, 1);
         table.Controls.Add(field, column, 0);

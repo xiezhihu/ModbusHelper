@@ -60,7 +60,7 @@ internal static class Program
             Console.WriteLine($"已渲染：{path}");
         }
 
-        CheckLayout(tabs);
+        CheckAllTabs(form, tabs, outputDirectory, "布局报告.txt");
         RunSelfLoopInteraction(
             form,
             tabs,
@@ -68,6 +68,16 @@ internal static class Program
             useRtu,
             masterPort,
             slavePort);
+        form.ClientSize = new Size(1180, 760);
+        Pump(TimeSpan.FromMilliseconds(350));
+        for (int index = 0; index < tabs.TabPages.Count; index++)
+        {
+            tabs.SelectedIndex = index;
+            Pump(TimeSpan.FromMilliseconds(180));
+            SavePage(form, outputDirectory, $"10-小窗口-{index + 1}.png");
+        }
+
+        CheckAllTabs(form, tabs, outputDirectory, "小窗口布局报告.txt");
         form.Close();
         Pump(TimeSpan.FromSeconds(2));
         if (File.Exists(testConfigurationPath))
@@ -212,6 +222,7 @@ internal static class Program
         form.Show();
         Pump(TimeSpan.FromMilliseconds(250));
         SavePage(form, outputDirectory, "8-字节序探测.png");
+        CheckLayout(form);
         form.Close();
     }
 
@@ -234,6 +245,7 @@ internal static class Program
         form.Show();
         Pump(TimeSpan.FromMilliseconds(250));
         SavePage(form, outputDirectory, "9-点位表.png");
+        CheckLayout(form);
         form.Close();
     }
 
@@ -266,25 +278,217 @@ internal static class Program
             ?? throw new InvalidOperationException($"字段 {fieldName} 为空。"));
     }
 
-    private static void CheckLayout(TabControl tabs)
+    private static void CheckAllTabs(
+        Form form,
+        TabControl tabs,
+        string outputDirectory,
+        string reportFileName)
     {
-        foreach (TabPage page in tabs.TabPages)
+        List<string> lines = new()
         {
-            if (page.Width < 800 || page.Height < 500)
+            $"窗口客户区：{form.ClientSize.Width}x{form.ClientSize.Height}",
+            $"窗口字体：{form.Font.Name} {form.Font.SizeInPoints:F1}"
+        };
+        for (int index = 0; index < tabs.TabPages.Count; index++)
+        {
+            tabs.SelectedIndex = index;
+            Pump(TimeSpan.FromMilliseconds(120));
+            TabPage page = tabs.TabPages[index];
+            CheckLayout(page);
+            lines.Add($"页签：{page.Text}，尺寸 {page.ClientSize.Width}x{page.ClientSize.Height}");
+            AppendControlReport(page, lines, 1);
+        }
+
+        File.WriteAllLines(
+            Path.Combine(outputDirectory, reportFileName),
+            lines,
+            System.Text.Encoding.UTF8);
+    }
+
+    private static void CheckLayout(Control page)
+    {
+        if (page.Width < 800 || page.Height < 500)
+        {
+            throw new InvalidOperationException(
+                $"页签“{page.Text}”可用尺寸过小：{page.Width}x{page.Height}。");
+        }
+
+        List<string> issues = new();
+        foreach (Control control in EnumerateControls(page))
+        {
+            if (IsEffectivelyVisible(control)
+                && (control.Width <= 0 || control.Height <= 0))
             {
-                throw new InvalidOperationException(
-                    $"页签“{page.Text}”可用尺寸过小：{page.Width}x{page.Height}。");
+                issues.Add(
+                    $"零尺寸控件：{DescribePath(control)}，位置 {control.Left},{control.Top}，"
+                    + $"尺寸 {control.Width}x{control.Height}，可见 {control.Visible}，"
+                    + $"停靠 {control.Dock}");
             }
 
-            foreach (Control control in EnumerateControls(page))
+            if (IsEffectivelyVisible(control) && control is Button button)
             {
-                if (control.Visible && (control.Width <= 0 || control.Height <= 0))
+                Size measured = TextRenderer.MeasureText(
+                    button.Text,
+                    button.Font,
+                    new Size(int.MaxValue, int.MaxValue),
+                    TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                if (measured.Width + 16 > button.ClientSize.Width
+                    || measured.Height + 4 > button.ClientSize.Height)
                 {
-                    throw new InvalidOperationException(
-                        $"页签“{page.Text}”存在零尺寸控件：{control.GetType().Name}。");
+                    issues.Add(
+                        $"按钮文字被裁切：{DescribePath(button)}，"
+                        + $"控件 {button.ClientSize.Width}x{button.ClientSize.Height}，"
+                        + $"文字需求 {measured.Width}x{measured.Height}");
+                }
+            }
+
+            if (IsEffectivelyVisible(control) && control is Label label
+                && !label.AutoSize
+                && !string.IsNullOrWhiteSpace(label.Text))
+            {
+                Size measured = TextRenderer.MeasureText(
+                    label.Text,
+                    label.Font,
+                    new Size(int.MaxValue, int.MaxValue),
+                    TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                if (measured.Width + 4 > label.ClientSize.Width
+                    || measured.Height + 2 > label.ClientSize.Height)
+                {
+                    issues.Add(
+                        $"标签文字被裁切：{DescribePath(label)}，"
+                        + $"控件 {label.ClientSize.Width}x{label.ClientSize.Height}，"
+                        + $"文字需求 {measured.Width}x{measured.Height}");
                 }
             }
         }
+
+        CheckSiblingOverlaps(page, issues);
+        if (issues.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"页签“{page.Text}”存在布局问题：{Environment.NewLine}"
+                + string.Join(Environment.NewLine, issues));
+        }
+    }
+
+    private static bool IsEffectivelyVisible(Control control)
+    {
+        Control? current = control;
+        while (current is not null)
+        {
+            if (!current.Visible)
+            {
+                return false;
+            }
+
+            current = current.Parent;
+        }
+
+        return true;
+    }
+
+    private static void CheckSiblingOverlaps(Control parent, List<string> issues)
+    {
+        List<Control> visibleSiblings = parent.Controls
+            .Cast<Control>()
+            .Where(IsEffectivelyVisible)
+            .ToList();
+        for (int firstIndex = 0; firstIndex < visibleSiblings.Count; firstIndex++)
+        {
+            Control first = visibleSiblings[firstIndex];
+            if (!IsLeafVisual(first))
+            {
+                continue;
+            }
+
+            for (int secondIndex = firstIndex + 1; secondIndex < visibleSiblings.Count; secondIndex++)
+            {
+                Control second = visibleSiblings[secondIndex];
+                if (!IsLeafVisual(second))
+                {
+                    continue;
+                }
+
+                Rectangle overlap = Rectangle.Intersect(first.Bounds, second.Bounds);
+                if (overlap.Width > 2 && overlap.Height > 2)
+                {
+                    issues.Add(
+                        $"控件重叠：{DescribePath(first)} 与 {DescribePath(second)}，"
+                        + $"重叠区域 {overlap.Width}x{overlap.Height}");
+                }
+            }
+        }
+
+        foreach (Control child in parent.Controls)
+        {
+            if (IsEffectivelyVisible(child))
+            {
+                CheckSiblingOverlaps(child, issues);
+            }
+        }
+    }
+
+    private static bool IsLeafVisual(Control control)
+    {
+        return control is TextBoxBase
+            or ComboBox
+            or NumericUpDown
+            or Button
+            or CheckBox
+            or RadioButton
+            or DataGridView
+            or ListBox
+            or ListView;
+    }
+
+    private static void AppendControlReport(
+        Control parent,
+        List<string> lines,
+        int depth)
+    {
+        foreach (Control control in parent.Controls)
+        {
+            if (!IsEffectivelyVisible(control))
+            {
+                continue;
+            }
+
+            lines.Add(
+                $"{new string(' ', depth * 2)}{Describe(control)}，位置 {control.Left},{control.Top}，尺寸 {control.Width}x{control.Height}");
+            AppendControlReport(control, lines, depth + 1);
+        }
+    }
+
+    private static string Describe(Control control)
+    {
+        string text = control.Text.Replace(
+            "\r",
+            " ",
+            StringComparison.Ordinal).Replace(
+            "\n",
+            " ",
+            StringComparison.Ordinal);
+        if (text.Length > 36)
+        {
+            text = text[..36] + "…";
+        }
+
+        return string.IsNullOrWhiteSpace(text)
+            ? control.GetType().Name
+            : $"{control.GetType().Name}“{text}”";
+    }
+
+    private static string DescribePath(Control control)
+    {
+        Stack<string> path = new();
+        Control? current = control;
+        while (current is not null)
+        {
+            path.Push(Describe(current));
+            current = current.Parent;
+        }
+
+        return string.Join(" > ", path);
     }
 
     private static IEnumerable<Control> EnumerateControls(Control parent)

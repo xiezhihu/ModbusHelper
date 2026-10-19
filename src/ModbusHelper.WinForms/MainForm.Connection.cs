@@ -14,8 +14,8 @@ public sealed partial class MainForm
 {
     private static readonly char[] DataSeparators = { ',', ';', ' ', '\r', '\n', '\t' };
     private readonly ComboBox _connectionTypeCombo = UiHelpers.CreateCombo();
-    private readonly Panel _rtuConnectionPanel = new() { Dock = DockStyle.Fill, AutoSize = true };
-    private readonly Panel _tcpConnectionPanel = new() { Dock = DockStyle.Fill, AutoSize = true };
+    private readonly GroupBox _rtuConnectionPanel = UiHelpers.CreateParameterGroup("RTU 串口参数");
+    private readonly GroupBox _tcpConnectionPanel = UiHelpers.CreateParameterGroup("TCP 网络参数");
     private readonly ComboBox _serialPortCombo = UiHelpers.CreateCombo();
     private readonly NumericUpDown _baudRateInput = UiHelpers.CreateNumber(1200, 921600, 9600);
     private readonly NumericUpDown _dataBitsInput = UiHelpers.CreateNumber(5, 8, 8);
@@ -75,8 +75,8 @@ public sealed partial class MainForm
             ColumnCount = 1,
             RowCount = 2
         };
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 88F));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 12F));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
         left.Controls.Add(CreateMasterConnectionGroup(), 0, 0);
         left.Controls.Add(CreateAddressBaseGroup(), 0, 1);
         split.Panel1.Controls.Add(left);
@@ -85,10 +85,11 @@ public sealed partial class MainForm
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3
+            RowCount = 3,
+            AutoScroll = true
         };
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 280F));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 296F));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         right.Controls.Add(CreateManualParameterGroup(), 0, 0);
 
@@ -161,38 +162,72 @@ public sealed partial class MainForm
     private GroupBox CreateMasterConnectionGroup()
     {
         GroupBox group = UiHelpers.CreateGroup("主站连接");
-        Panel scroll = new() { Dock = DockStyle.Fill, AutoScroll = true };
-        TableLayoutPanel table = UiHelpers.CreateFieldTable(7);
-        table.RowStyles.Clear();
-        table.RowCount = 7;
-        for (int index = 0; index < 7; index++)
+        Panel scroll = new()
         {
-            table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        }
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            Padding = new Padding(4)
+        };
+        TableLayoutPanel table = new()
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(0)
+        };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
-        UiHelpers.AddField(table, 0, "连接类型", _connectionTypeCombo);
+        TableLayoutPanel typeRow = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(4, 4, 4, 6)
+        };
+        typeRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96F));
+        typeRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        typeRow.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        typeRow.Controls.Add(UiHelpers.CreateLabel("连接类型"), 0, 0);
+        typeRow.Controls.Add(_connectionTypeCombo, 1, 0);
+        table.Controls.Add(typeRow);
+
         ConfigureRtuPanel();
         ConfigureTcpPanel();
-        UiHelpers.AddField(table, 1, "RTU 参数", _rtuConnectionPanel);
-        UiHelpers.AddField(table, 2, "TCP 参数", _tcpConnectionPanel);
-        UiHelpers.AddField(table, 3, "传输层超时", AddUnit(_transportTimeoutInput, "毫秒"));
-        UiHelpers.AddField(table, 4, "应用层应答超时", AddUnit(_responseTimeoutInput, "毫秒"));
-        UiHelpers.AddField(table, 5, "重试参数", CreateRetryPanel());
+        table.Controls.Add(_rtuConnectionPanel);
+        table.Controls.Add(_tcpConnectionPanel);
+
+        GroupBox timeoutGroup = UiHelpers.CreateParameterGroup("超时与重试");
+        TableLayoutPanel timeoutTable = UiHelpers.CreateFieldTable(4, autoSize: true);
+        timeoutTable.ColumnStyles[0].Width = 112F;
+        UiHelpers.AddField(timeoutTable, 0, "传输层超时", AddUnit(_transportTimeoutInput, "毫秒"));
+        UiHelpers.AddField(timeoutTable, 1, "应用层应答", AddUnit(_responseTimeoutInput, "毫秒"));
+        UiHelpers.AddField(timeoutTable, 2, "重试次数", _retryCountInput);
+        UiHelpers.AddField(timeoutTable, 3, "重试间隔", AddUnit(_retryDelayInput, "毫秒"));
+        timeoutGroup.Controls.Add(timeoutTable);
+        table.Controls.Add(timeoutGroup);
 
         TableLayoutPanel buttons = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            RowCount = 1,
+            ColumnCount = 2,
+            RowCount = 2,
             AutoSize = true
         };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112F));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112F));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        buttons.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+        buttons.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
         buttons.Controls.Add(_connectButton, 0, 0);
         buttons.Controls.Add(_disconnectButton, 1, 0);
-        buttons.Controls.Add(_connectionStateLabel, 2, 0);
-        UiHelpers.AddField(table, 6, "连接操作", buttons);
+        buttons.Controls.Add(_connectionStateLabel, 0, 1);
+        buttons.SetColumnSpan(_connectionStateLabel, 2);
+        _connectionStateLabel.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        _connectionStateLabel.AutoEllipsis = true;
+        buttons.Margin = new Padding(4, 8, 4, 4);
+        table.Controls.Add(buttons);
 
         _connectButton.Click += async (_, _) => await ConnectMasterAsync();
         _disconnectButton.Click += async (_, _) => await DisconnectMasterAsync();
@@ -203,7 +238,9 @@ public sealed partial class MainForm
 
     private void ConfigureRtuPanel()
     {
-        TableLayoutPanel table = UiHelpers.CreateFieldTable(5);
+        TableLayoutPanel table = UiHelpers.CreateFieldTable(5, autoSize: true);
+        table.ColumnStyles[0].Width = 78F;
+        table.Dock = DockStyle.Top;
         table.AutoSize = true;
         TableLayoutPanel portRow = new()
         {
@@ -225,33 +262,14 @@ public sealed partial class MainForm
 
     private void ConfigureTcpPanel()
     {
-        TableLayoutPanel table = UiHelpers.CreateFieldTable(3);
+        TableLayoutPanel table = UiHelpers.CreateFieldTable(3, autoSize: true);
+        table.ColumnStyles[0].Width = 78F;
+        table.Dock = DockStyle.Top;
         table.AutoSize = true;
         UiHelpers.AddField(table, 0, "主机", _tcpHostInput);
         UiHelpers.AddField(table, 1, "端口", _tcpPortInput);
         UiHelpers.AddField(table, 2, "连接超时", AddUnit(_tcpConnectTimeoutInput, "毫秒"));
         _tcpConnectionPanel.Controls.Add(table);
-    }
-
-    private TableLayoutPanel CreateRetryPanel()
-    {
-        TableLayoutPanel table = new()
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 2,
-            AutoSize = true,
-            Margin = new Padding(4)
-        };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94F));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-        table.Controls.Add(UiHelpers.CreateLabel("重试次数"), 0, 0);
-        table.Controls.Add(_retryCountInput, 1, 0);
-        table.Controls.Add(UiHelpers.CreateLabel("间隔毫秒"), 0, 1);
-        table.Controls.Add(_retryDelayInput, 1, 1);
-        return table;
     }
 
     private GroupBox CreateAddressBaseGroup()
@@ -275,6 +293,7 @@ public sealed partial class MainForm
     {
         GroupBox group = UiHelpers.CreateGroup("手动读写参数");
         TableLayoutPanel table = UiHelpers.CreateFieldTable(7);
+        table.ColumnStyles[0].Width = 92F;
         _manualParameterTable = table;
         UiHelpers.AddField(table, 0, "功能码", _manualFunctionCombo);
         UiHelpers.AddField(table, 1, "从站地址", _manualUnitInput);
