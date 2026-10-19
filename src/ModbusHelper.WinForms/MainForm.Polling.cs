@@ -126,7 +126,8 @@ public sealed partial class MainForm
             DisplayMember = nameof(UiOption<ModbusFunction>.Text),
             ValueMember = nameof(UiOption<ModbusFunction>.Value),
             ValueType = typeof(ModbusFunction),
-            DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton,
+            DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
+            FlatStyle = FlatStyle.Standard,
             SortMode = DataGridViewColumnSortMode.NotSortable
         };
         _pollingGrid.Columns.Add(functionColumn);
@@ -178,7 +179,8 @@ public sealed partial class MainForm
             DisplayMember = nameof(UiOption<DataValueType>.Text),
             ValueMember = nameof(UiOption<DataValueType>.Value),
             ValueType = typeof(DataValueType),
-            DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton,
+            DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
+            FlatStyle = FlatStyle.Standard,
             SortMode = DataGridViewColumnSortMode.NotSortable
         };
         _pollingGrid.Columns.Add(dataTypeColumn);

@@ -369,7 +369,8 @@ public sealed partial class MainForm
                 .ToArray(),
             DisplayMember = nameof(UiOption<ModbusFunction>.Text),
             ValueMember = nameof(UiOption<ModbusFunction>.Value),
-            DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton
+            DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox,
+            FlatStyle = FlatStyle.Standard
         };
         _slaveRuleGrid.Columns.Add(functionColumn);
         _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
