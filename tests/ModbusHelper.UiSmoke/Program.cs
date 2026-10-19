@@ -192,6 +192,20 @@ internal static class Program
             }
         }
 
+        if (pollingGrid.Rows.Count > 0)
+        {
+            pollingGrid.CurrentCell = pollingGrid.Rows[0].Cells[7];
+            pollingGrid.BeginEdit(true);
+            Pump(TimeSpan.FromMilliseconds(80));
+            if (pollingGrid.EditingControl is ComboBox dataTypeCombo
+                && dataTypeCombo.DropDownWidth < 180)
+            {
+                throw new InvalidOperationException("数据类型下拉框宽度不足，长文本可能被裁切。");
+            }
+
+            pollingGrid.EndEdit();
+        }
+
         Button startAll = FindButton(tabs, "启动全部")
             ?? throw new InvalidOperationException("未找到启动全部按钮。");
         startAll.PerformClick();

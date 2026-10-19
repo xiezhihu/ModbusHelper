@@ -67,52 +67,82 @@ public sealed partial class MainForm : Form
             RowCount = 3,
             BackColor = BackColor
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64F));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         Panel header = new()
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             BackColor = Color.FromArgb(18, 56, 63),
-            Padding = new Padding(18, 8, 18, 8)
+            Padding = new Padding(18, 8, 18, 8),
+            Margin = new Padding(0)
         };
+        TableLayoutPanel headerLayout = new()
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+        headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+        TableLayoutPanel titleStack = new()
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+        titleStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        titleStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Label title = new()
         {
-            AutoSize = false,
-            Width = 560,
-            Height = 36,
+            AutoSize = true,
+            Dock = DockStyle.Fill,
             ForeColor = Color.White,
             Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold),
             Text = "Modbus 调试工具",
             TextAlign = ContentAlignment.MiddleLeft,
-            Location = new Point(18, 2)
+            Margin = new Padding(0)
         };
         Label subtitle = new()
         {
             AutoSize = true,
+            Dock = DockStyle.Fill,
             ForeColor = Color.FromArgb(188, 218, 220),
             Text = "RTU / TCP 主站读写、轮询采集、从站模拟与现场排障",
-            Location = new Point(20, 38)
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0, 1, 0, 0)
         };
+        titleStack.Controls.Add(title, 0, 0);
+        titleStack.Controls.Add(subtitle, 0, 1);
+
         _headerStatusLabel.AutoSize = true;
-        _headerStatusLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _headerStatusLabel.Dock = DockStyle.Fill;
         _headerStatusLabel.TextAlign = ContentAlignment.MiddleRight;
         _headerStatusLabel.ForeColor = Color.FromArgb(184, 224, 209);
         _headerStatusLabel.Font = new Font(Font, FontStyle.Bold);
         _headerStatusLabel.Text = "未连接";
-        header.Controls.Add(title);
-        header.Controls.Add(subtitle);
-        header.Controls.Add(_headerStatusLabel);
-        header.Resize += (_, _) =>
-        {
-            _headerStatusLabel.Location = new Point(
-                Math.Max(20, header.ClientSize.Width - _headerStatusLabel.Width - 22),
-                22);
-        };
+        _headerStatusLabel.Margin = new Padding(18, 0, 0, 0);
+        headerLayout.Controls.Add(titleStack, 0, 0);
+        headerLayout.Controls.Add(_headerStatusLabel, 1, 0);
+        header.Controls.Add(headerLayout);
 
         _mainTabs.Dock = DockStyle.Fill;
-        _mainTabs.Padding = new Point(16, 6);
+        _mainTabs.Padding = new Point(12, 8);
+        _mainTabs.SizeMode = TabSizeMode.Fixed;
+        _mainTabs.ItemSize = new Size(UiHelpers.Scale(this, 108), UiHelpers.Scale(this, 34));
+        _mainTabs.Margin = new Padding(0);
         _mainTabs.TabPages.Add(_connectionPage);
         _mainTabs.TabPages.Add(_pollingPage);
         _mainTabs.TabPages.Add(_slavePage);
@@ -121,7 +151,8 @@ public sealed partial class MainForm : Form
 
         StatusStrip statusStrip = new()
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
+            AutoSize = true,
             SizingGrip = false,
             BackColor = Color.FromArgb(225, 232, 234)
         };

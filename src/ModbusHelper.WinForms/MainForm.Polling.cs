@@ -78,18 +78,13 @@ public sealed partial class MainForm
         _pollingGrid.BackgroundColor = Color.White;
         _pollingGrid.EditMode = DataGridViewEditMode.EditOnEnter;
         _pollingGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
-        _pollingGrid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-        _pollingGrid.RowTemplate.Height = 30;
-        _pollingGrid.ColumnHeadersHeight = 34;
-        _pollingGrid.ColumnHeadersHeightSizeMode =
-            DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-        _pollingGrid.ColumnHeadersDefaultCellStyle.Alignment =
-            DataGridViewContentAlignment.MiddleCenter;
+        UiHelpers.ConfigureGridMetrics(_pollingGrid);
         _pollingGrid.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
         _pollingGrid.DataSource = _pollingTaskBindings;
         _pollingGrid.CellFormatting += OnPollingGridCellFormatting;
         _pollingGrid.CellParsing += OnPollingGridCellParsing;
         _pollingGrid.CellValueChanged += OnPollingGridCellValueChanged;
+        _pollingGrid.EditingControlShowing += OnPollingGridEditingControlShowing;
         _pollingGrid.DataError += (_, args) =>
         {
             args.ThrowException = false;
@@ -175,8 +170,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.DataType),
             HeaderText = "数据类型",
-            Width = 102,
-            MinimumWidth = 92,
+            Width = UiHelpers.Scale(_pollingGrid, 160),
+            MinimumWidth = UiHelpers.Scale(_pollingGrid, 150),
             DataSource = Enum.GetValues<DataValueType>()
                 .Select(type => new UiOption<DataValueType>(type, UiHelpers.DataTypeText(type)))
                 .ToArray(),
@@ -191,8 +186,8 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.ByteOrder),
             HeaderText = "字节序",
-            Width = 96,
-            MinimumWidth = 88,
+            Width = UiHelpers.Scale(_pollingGrid, 118),
+            MinimumWidth = UiHelpers.Scale(_pollingGrid, 110),
             DataSource = Enum.GetValues<RegisterByteOrder>()
                 .Select(order => new UiOption<RegisterByteOrder>(
                     order,
@@ -236,6 +231,51 @@ public sealed partial class MainForm
         _pollingGrid.Columns.Add(runningColumn);
     }
 
+    private void OnPollingGridEditingControlShowing(
+        object? sender,
+        DataGridViewEditingControlShowingEventArgs e)
+    {
+        if (e.Control is not ComboBox comboBox)
+        {
+            return;
+        }
+
+        DataGridViewCell? cell = _pollingGrid.CurrentCell;
+        int dropDownWidth = UiHelpers.Scale(_pollingGrid, 180);
+        if (cell?.OwningColumn?.HeaderText == "数据类型")
+        {
+            string[] texts = Enum.GetValues<DataValueType>()
+                .Select(UiHelpers.DataTypeText)
+                .ToArray();
+            dropDownWidth = Math.Max(
+                dropDownWidth,
+                UiHelpers.MeasureTextWidth(texts, comboBox.Font, UiHelpers.Scale(_pollingGrid, 28)));
+        }
+        else if (cell?.OwningColumn?.HeaderText == "字节序")
+        {
+            string[] texts = Enum.GetValues<RegisterByteOrder>()
+                .Select(UiHelpers.ShortByteOrderText)
+                .ToArray();
+            dropDownWidth = Math.Max(
+                dropDownWidth,
+                UiHelpers.MeasureTextWidth(texts, comboBox.Font, UiHelpers.Scale(_pollingGrid, 28)));
+        }
+
+        // DataGridView 在事件返回后还会再次套用单元格样式，因此延迟一次设置，
+        // 确保展开列表最终使用足够宽度。
+        comboBox.DropDownWidth = dropDownWidth;
+        if (comboBox.IsHandleCreated)
+        {
+            comboBox.BeginInvoke((Action)(() =>
+            {
+                if (!comboBox.IsDisposed)
+                {
+                    comboBox.DropDownWidth = dropDownWidth;
+                }
+            }));
+        }
+    }
+
     private void ConfigureLiveValueGrid()
     {
         _liveValueGrid.Dock = DockStyle.Fill;
@@ -245,6 +285,7 @@ public sealed partial class MainForm
         _liveValueGrid.RowHeadersVisible = false;
         _liveValueGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         _liveValueGrid.BackgroundColor = Color.White;
+        UiHelpers.ConfigureGridMetrics(_liveValueGrid);
         _liveValueGrid.Columns.Add("任务", "任务");
         _liveValueGrid.Columns.Add("时间", "采样时间");
         _liveValueGrid.Columns.Add("数值", "解析值");

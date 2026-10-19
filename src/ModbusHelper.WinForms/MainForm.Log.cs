@@ -82,6 +82,7 @@ public sealed partial class MainForm
         _logGrid.AutoGenerateColumns = false;
         _logGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         _logGrid.BackgroundColor = Color.White;
+        UiHelpers.ConfigureGridMetrics(_logGrid);
         _logGrid.DataSource = _logBindings;
         _logGrid.CellFormatting += OnLogGridCellFormatting;
 

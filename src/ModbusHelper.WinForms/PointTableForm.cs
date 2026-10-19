@@ -95,16 +95,11 @@ internal sealed class PointTableForm : Form
         _grid.RowHeadersVisible = false;
         _grid.BackgroundColor = Color.White;
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
-        _grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
-        _grid.RowTemplate.Height = 30;
-        _grid.ColumnHeadersHeight = 34;
-        _grid.ColumnHeadersHeightSizeMode =
-            DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-        _grid.ColumnHeadersDefaultCellStyle.Alignment =
-            DataGridViewContentAlignment.MiddleCenter;
+        UiHelpers.ConfigureGridMetrics(_grid);
         _grid.DataSource = _points;
         _grid.CellFormatting += OnGridCellFormatting;
         _grid.CellParsing += OnGridCellParsing;
+        _grid.EditingControlShowing += OnGridEditingControlShowing;
         _grid.CellDoubleClick += (_, args) =>
         {
             if (args.RowIndex >= 0)
@@ -134,8 +129,8 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.Function),
             HeaderText = "功能码",
-            Width = 150,
-            MinimumWidth = 136,
+            Width = UiHelpers.Scale(_grid, 174),
+            MinimumWidth = UiHelpers.Scale(_grid, 160),
             DataSource = Enum.GetValues<ModbusFunction>()
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
@@ -166,8 +161,8 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.DataType),
             HeaderText = "数据类型",
-            Width = 105,
-            MinimumWidth = 96,
+            Width = UiHelpers.Scale(_grid, 160),
+            MinimumWidth = UiHelpers.Scale(_grid, 150),
             DataSource = Enum.GetValues<DataValueType>()
                 .Select(type => new UiOption<DataValueType>(type, UiHelpers.DataTypeText(type)))
                 .ToArray(),
@@ -180,8 +175,8 @@ internal sealed class PointTableForm : Form
         {
             DataPropertyName = nameof(PointConfiguration.ByteOrder),
             HeaderText = "字节序",
-            Width = 96,
-            MinimumWidth = 88,
+            Width = UiHelpers.Scale(_grid, 118),
+            MinimumWidth = UiHelpers.Scale(_grid, 110),
             DataSource = Enum.GetValues<RegisterByteOrder>()
                 .Select(order => new UiOption<RegisterByteOrder>(
                     order,
@@ -200,6 +195,50 @@ internal sealed class PointTableForm : Form
             MinimumWidth = 54,
             ValueType = typeof(bool)
         });
+    }
+
+    private void OnGridEditingControlShowing(
+        object? sender,
+        DataGridViewEditingControlShowingEventArgs e)
+    {
+        if (e.Control is not ComboBox comboBox)
+        {
+            return;
+        }
+
+        DataGridViewCell? cell = _grid.CurrentCell;
+        int dropDownWidth = UiHelpers.Scale(_grid, 180);
+        if (cell?.OwningColumn?.HeaderText == "数据类型")
+        {
+            dropDownWidth = Math.Max(
+                dropDownWidth,
+                UiHelpers.MeasureTextWidth(
+                    Enum.GetValues<DataValueType>().Select(UiHelpers.DataTypeText),
+                    comboBox.Font,
+                    UiHelpers.Scale(_grid, 28)));
+        }
+        else if (cell?.OwningColumn?.HeaderText == "字节序")
+        {
+            dropDownWidth = Math.Max(
+                dropDownWidth,
+                UiHelpers.MeasureTextWidth(
+                    Enum.GetValues<RegisterByteOrder>()
+                        .Select(UiHelpers.ShortByteOrderText),
+                    comboBox.Font,
+                    UiHelpers.Scale(_grid, 28)));
+        }
+
+        comboBox.DropDownWidth = dropDownWidth;
+        if (comboBox.IsHandleCreated)
+        {
+            comboBox.BeginInvoke((Action)(() =>
+            {
+                if (!comboBox.IsDisposed)
+                {
+                    comboBox.DropDownWidth = dropDownWidth;
+                }
+            }));
+        }
     }
 
     private void AddPoint()

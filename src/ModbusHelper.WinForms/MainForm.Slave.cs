@@ -204,14 +204,24 @@ public sealed partial class MainForm
             ColumnCount = 4,
             AutoSize = true
         };
-        formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 45F));
+        formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiHelpers.Scale(formatRow, 58)));
         formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
-        formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 45F));
+        formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiHelpers.Scale(formatRow, 58)));
         formatRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
-        formatRow.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
-        formatRow.Controls.Add(UiHelpers.CreateLabel("数据位"), 0, 0);
+        formatRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        Label dataBitsLabel = UiHelpers.CreateLabel("数据位");
+        dataBitsLabel.AutoSize = false;
+        dataBitsLabel.Dock = DockStyle.Fill;
+        dataBitsLabel.TextAlign = ContentAlignment.MiddleLeft;
+        dataBitsLabel.Margin = new Padding(4, 2, 4, 2);
+        Label parityLabel = UiHelpers.CreateLabel("校验");
+        parityLabel.AutoSize = false;
+        parityLabel.Dock = DockStyle.Fill;
+        parityLabel.TextAlign = ContentAlignment.MiddleLeft;
+        parityLabel.Margin = new Padding(4, 2, 4, 2);
+        formatRow.Controls.Add(dataBitsLabel, 0, 0);
         formatRow.Controls.Add(_slaveDataBitsInput, 1, 0);
-        formatRow.Controls.Add(UiHelpers.CreateLabel("校验"), 2, 0);
+        formatRow.Controls.Add(parityLabel, 2, 0);
         formatRow.Controls.Add(_slaveParityCombo, 3, 0);
         UiHelpers.AddField(table, 2, "串口格式", formatRow);
         UiHelpers.AddField(table, 3, "停止位", _slaveStopBitsCombo);
@@ -259,12 +269,14 @@ public sealed partial class MainForm
         _slaveUnitGrid.AllowUserToAddRows = false;
         _slaveUnitGrid.RowHeadersVisible = false;
         _slaveUnitGrid.BackgroundColor = Color.White;
+        UiHelpers.ConfigureGridMetrics(_slaveUnitGrid);
         _slaveUnitGrid.DataSource = _slaveUnitEditors;
         _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             DataPropertyName = nameof(SlaveUnitEditor.UnitId),
             HeaderText = "从站地址",
-            Width = 72
+            Width = UiHelpers.Scale(_slaveUnitGrid, 92),
+            MinimumWidth = UiHelpers.Scale(_slaveUnitGrid, 88)
         });
         _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -325,6 +337,7 @@ public sealed partial class MainForm
         _slaveRuleGrid.AllowUserToAddRows = false;
         _slaveRuleGrid.RowHeadersVisible = false;
         _slaveRuleGrid.BackgroundColor = Color.White;
+        UiHelpers.ConfigureGridMetrics(_slaveRuleGrid);
         _slaveRuleGrid.DataSource = _slaveRuleEditors;
         _slaveRuleGrid.CellFormatting += OnSlaveRuleGridCellFormatting;
         _slaveRuleGrid.CellParsing += OnSlaveRuleGridCellParsing;
@@ -332,20 +345,23 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(ExceptionRuleEditor.Enabled),
             HeaderText = "启用",
-            Width = 52
+            Width = UiHelpers.Scale(_slaveRuleGrid, 52),
+            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 48)
         });
         _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             DataPropertyName = nameof(ExceptionRuleEditor.UnitId),
             HeaderText = "从站",
-            Width = 58,
+            Width = UiHelpers.Scale(_slaveRuleGrid, 56),
+            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 52),
             ValueType = typeof(byte)
         });
         DataGridViewComboBoxColumn functionColumn = new()
         {
             DataPropertyName = nameof(ExceptionRuleEditor.Function),
             HeaderText = "功能码",
-            Width = 115,
+            Width = UiHelpers.Scale(_slaveRuleGrid, 112),
+            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 104),
             DataSource = Enum.GetValues<ModbusFunction>()
                 .Select(function => new UiOption<ModbusFunction>(
                     function,
@@ -360,21 +376,24 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(ExceptionRuleEditor.StartAddress),
             HeaderText = "地址",
-            Width = 78,
+            Width = UiHelpers.Scale(_slaveRuleGrid, 58),
+            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 54),
             ValueType = typeof(ushort)
         });
         _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             DataPropertyName = nameof(ExceptionRuleEditor.Count),
             HeaderText = "数量",
-            Width = 60,
+            Width = UiHelpers.Scale(_slaveRuleGrid, 58),
+            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 54),
             ValueType = typeof(ushort)
         });
         _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             DataPropertyName = nameof(ExceptionRuleEditor.ExceptionCode),
             HeaderText = "异常码",
-            Width = 70,
+            Width = UiHelpers.Scale(_slaveRuleGrid, 64),
+            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 60),
             ValueType = typeof(byte)
         });
     }

@@ -29,6 +29,47 @@ internal sealed class UiOption<T>
 /// </summary>
 internal static class UiHelpers
 {
+    /// <summary>
+    /// 按当前控件的 DPI 将设计时像素换算为实际像素。
+    /// </summary>
+    public static int Scale(Control control, int logicalPixels)
+    {
+        int dpi = control.DeviceDpi > 0 ? control.DeviceDpi : 96;
+        return Math.Max(1, (int)Math.Ceiling(logicalPixels * dpi / 96F));
+    }
+
+    /// <summary>
+    /// 测量单行文字所需的宽度，供表格列和下拉框在高 DPI 下留出足够空间。
+    /// </summary>
+    public static int MeasureTextWidth(IEnumerable<string> texts, Font font, int padding = 0)
+    {
+        int width = texts
+            .Select(text => TextRenderer.MeasureText(
+                text,
+                font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width)
+            .DefaultIfEmpty(0)
+            .Max();
+        return width + padding;
+    }
+
+    /// <summary>
+    /// 为可编辑表格设置统一的行高和表头高度，避免字体放大后文字被边界裁切。
+    /// </summary>
+    public static void ConfigureGridMetrics(DataGridView grid)
+    {
+        grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+        grid.RowTemplate.Height = Scale(grid, 30);
+        grid.ColumnHeadersHeight = Scale(grid, 34);
+        grid.ColumnHeadersHeightSizeMode =
+            DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        grid.ColumnHeadersDefaultCellStyle.Alignment =
+            DataGridViewContentAlignment.MiddleCenter;
+        grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
+        grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
+    }
+
     public static Button CreateButton(string text, Action action, int width = 96)
     {
         Font font = new("Microsoft YaHei UI", 9F);
@@ -41,7 +82,7 @@ internal static class UiHelpers
         {
             Text = text,
             Width = Math.Max(width, textSize.Width + 28),
-            Height = 30,
+            Height = Math.Max(30, textSize.Height + 12),
             Font = font,
             Margin = new Padding(4),
             UseVisualStyleBackColor = true
@@ -142,7 +183,8 @@ internal static class UiHelpers
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         for (int index = 0; index < rows; index++)
         {
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+            // 使用首选高度而不是固定 34 像素，避免高 DPI 或中文字体放大后裁切。
+            table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         }
 
         return table;
