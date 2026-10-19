@@ -25,6 +25,13 @@ internal sealed class PointTableForm : Form
     private readonly AddressBase _addressBase;
     private readonly BindingList<PointConfiguration> _points = new();
     private readonly DataGridView _grid = new();
+    private readonly ToolTip _toolTip = new()
+    {
+        AutoPopDelay = 10000,
+        InitialDelay = 500,
+        ReshowDelay = 100,
+        ShowAlways = true
+    };
 
     public PointTableForm(IEnumerable<PointConfiguration> points, AddressBase addressBase)
     {
@@ -41,11 +48,48 @@ internal sealed class PointTableForm : Form
         Font = new Font("Microsoft YaHei UI", 9F);
         BackColor = Color.FromArgb(244, 247, 248);
         BuildLayout();
+        InitializeToolTips();
+        FormClosed += (_, _) => _toolTip.Dispose();
     }
 
     public IReadOnlyList<PointConfiguration> Points => _points.ToArray();
 
     public PointConfiguration? SelectedPoint { get; private set; }
+
+    private void InitializeToolTips()
+    {
+        _toolTip.SetToolTip(
+            _grid,
+            "双击点位可生成轮询任务；数据类型和字节序用于解析寄存器原始值。");
+        SetButtonToolTip("新增点位", "新增一条点位配置。");
+        SetButtonToolTip("删除点位", "删除当前选中的点位。");
+        SetButtonToolTip("生成轮询任务", "按当前选中点位生成一条轮询任务。");
+        SetButtonToolTip("保存点位表", "保存当前点位配置并返回主窗体。");
+    }
+
+    private void SetButtonToolTip(string buttonText, string text)
+    {
+        foreach (Control control in EnumerateControls(this))
+        {
+            if (control is Button button
+                && string.Equals(button.Text, buttonText, StringComparison.Ordinal))
+            {
+                _toolTip.SetToolTip(button, text);
+            }
+        }
+    }
+
+    private static IEnumerable<Control> EnumerateControls(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            yield return child;
+            foreach (Control nested in EnumerateControls(child))
+            {
+                yield return nested;
+            }
+        }
+    }
 
     private void BuildLayout()
     {

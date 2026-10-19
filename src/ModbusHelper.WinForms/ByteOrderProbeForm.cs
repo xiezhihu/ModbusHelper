@@ -22,6 +22,13 @@ internal sealed class ByteOrderProbeForm : Form
     private readonly ListView _resultList = new();
     private readonly Label _recommendationLabel = UiHelpers.CreateLabel("请输入参数后执行探测。");
     private readonly Button _applyButton = UiHelpers.CreateButton("应用到解析配置", () => { }, 190);
+    private readonly ToolTip _toolTip = new()
+    {
+        AutoPopDelay = 10000,
+        InitialDelay = 500,
+        ReshowDelay = 100,
+        ShowAlways = true
+    };
     private ByteOrderProbeReport? _report;
 
     public ByteOrderProbeForm(ByteOrderProbeService probeService, AddressBase addressBase)
@@ -36,6 +43,8 @@ internal sealed class ByteOrderProbeForm : Form
         BackColor = Color.FromArgb(244, 247, 248);
 
         BuildLayout();
+        InitializeToolTips();
+        FormClosed += (_, _) => _toolTip.Dispose();
         UiHelpers.SetEnumOptions(
             _dataTypeCombo,
             new[]
@@ -48,6 +57,35 @@ internal sealed class ByteOrderProbeForm : Form
             UiHelpers.DataTypeText);
         _dataTypeCombo.SelectedIndex = 1;
         _applyButton.Click += (_, _) => ApplySelected();
+    }
+
+    private void InitializeToolTips()
+    {
+        _toolTip.SetToolTip(_unitInput, "要读取的从站地址，允许 1-247。");
+        _toolTip.SetToolTip(
+            _addressInput,
+            "按主窗体当前地址基准输入连续寄存器的起始地址。");
+        _toolTip.SetToolTip(
+            _dataTypeCombo,
+            "32 位类型读取 2 个连续寄存器，64 位类型读取 4 个连续寄存器。");
+        _toolTip.SetToolTip(_minimumInput, "合理范围下限，命中结果会高亮。");
+        _toolTip.SetToolTip(_maximumInput, "合理范围上限，命中结果会高亮。");
+        _toolTip.SetToolTip(
+            _resultList,
+            "同一组原始寄存器会按 ABCD、CDAB、BADC、DCBA 四种布局解析。");
+        _toolTip.SetToolTip(
+            _recommendationLabel,
+            "自动探测只提供辅助建议，最终字节序应以设备手册为准。");
+        _toolTip.SetToolTip(
+            _applyButton,
+            "将当前选中的布局应用到主窗体的解析配置。");
+        Button? probeButton = FindButton(this, "读取并探测");
+        if (probeButton is not null)
+        {
+            _toolTip.SetToolTip(
+                probeButton,
+                "读取连续寄存器并比较四种字节序解析结果。");
+        }
     }
 
     /// <summary>用户选择应用的数据类型。</summary>

@@ -22,6 +22,13 @@ public sealed partial class MainForm : Form
     private readonly TabPage _logPage = new("报文日志");
     private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 200 };
     private readonly ConcurrentQueue<Action> _uiActions = new();
+    private readonly ToolTip _toolTip = new()
+    {
+        AutoPopDelay = 10000,
+        InitialDelay = 500,
+        ReshowDelay = 100,
+        ShowAlways = true
+    };
     private readonly Label _headerStatusLabel = new();
     private readonly ToolStripStatusLabel _statusConnectionLabel = new();
     private readonly ToolStripStatusLabel _statusPollingLabel = new();
@@ -49,12 +56,14 @@ public sealed partial class MainForm : Form
         InitializeLogPage();
         SubscribeServiceEvents();
         ApplyConfigurationToControls();
+        InitializeToolTips();
 
         _uiTimer.Tick += OnUiTimerTick;
         _uiTimer.Start();
         Shown += OnMainFormShown;
         FormClosing += OnMainFormClosing;
         FormClosed += OnMainFormFormClosed;
+        FormClosed += (_, _) => _toolTip.Dispose();
     }
 
     private void InitializeShell()
@@ -171,6 +180,144 @@ public sealed partial class MainForm : Form
         root.Controls.Add(_mainTabs, 0, 1);
         root.Controls.Add(statusStrip, 0, 2);
         Controls.Add(root);
+    }
+
+    private void InitializeToolTips()
+    {
+        SetToolTip(_connectionTypeCombo, "选择主站传输方式：RTU 使用串口，TCP 使用网络连接。");
+        SetToolTip(_serialPortCombo, "主站使用的串口。虚拟串口自环时可选择 COM1 或 COM2。");
+        SetToolTip(_baudRateInput, "RTU 波特率，必须与从站保持一致。");
+        SetToolTip(_dataBitsInput, "RTU 数据位，常用配置为 8。");
+        SetToolTip(_parityCombo, "RTU 校验方式，必须与从站保持一致。");
+        SetToolTip(_stopBitsCombo, "RTU 停止位，必须与从站保持一致。");
+        SetToolTip(_tcpHostInput, "TCP 从站的 IP 地址或主机名。");
+        SetToolTip(_tcpPortInput, "TCP 从站监听端口，Modbus TCP 常用端口为 502。");
+        SetToolTip(_tcpConnectTimeoutInput, "建立 TCP 连接时的连接超时，不等同于应用层应答超时。");
+        SetToolTip(_transportTimeoutInput, "串口或 TCP 底层读写超时。");
+        SetToolTip(_responseTimeoutInput, "发送 Modbus 请求后等待完整响应帧的应用层超时。");
+        SetToolTip(_retryCountInput, "通信失败后的重试次数，0 表示不重试。");
+        SetToolTip(_retryDelayInput, "每次重试前等待的时间。");
+        SetToolTip(_addressBaseCombo, "只影响界面显示和输入：0 基为协议地址，1 基为设备手册常见的 40001 风格。");
+        SetToolTip(_manualFunctionCombo, "选择要执行的 Modbus 功能码。读写数量上限会随功能码校验。");
+        SetToolTip(_manualUnitInput, "读操作允许 1-247；写操作还允许 0（广播写）。");
+        SetToolTip(_manualAddressInput, "按当前地址基准输入，发送给 NModbus 前会转换为 0 基地址。");
+        SetToolTip(_manualCountInput, "读取数量：寄存器最多 125，线圈或离散输入最多 2000。");
+        SetToolTip(_manualDataTypeCombo, "将原始 ushort 寄存器解析为数值或字符串。32 位占 2 个寄存器，64 位占 4 个寄存器。");
+        SetToolTip(_manualByteOrderCombo, "字序表示寄存器排列，字节序表示单个寄存器内部高低字节排列。");
+        SetToolTip(_manualWriteDataInput, "写操作输入值；多值可使用逗号、分号或空格分隔。");
+        SetToolTip(_executeManualButton, "立即执行一次当前参数对应的读写操作。");
+        SetToolTip(_connectButton, "按当前连接参数建立主站连接。");
+        SetToolTip(_disconnectButton, "断开当前主站连接并停止相关轮询任务。");
+        SetToolTip(_requestHexBox, "最近一次发送给从站的原始十六进制报文。");
+        SetToolTip(_responseHexBox, "最近一次收到的原始十六进制响应报文。");
+        SetToolTip(_parsedValueBox, "响应报文按当前数据类型和字节序解析后的结果，同时保留原始值。");
+
+        SetToolTip(_pollingGrid, "支持 Ctrl 或 Shift 多选任务；双击单元格可编辑任务参数。");
+        SetGridToolTip(_pollingGrid, "启用", "任务是否参与启动全部和周期轮询。");
+        SetGridToolTip(_pollingGrid, "起始地址", "按当前地址基准显示，实际发送前转换为 0 基协议地址。");
+        SetGridToolTip(_pollingGrid, "间隔毫秒", "周期轮询间隔，最小 100 毫秒；同一连接下任务会串行执行。");
+        SetGridToolTip(_pollingGrid, "数据类型", "将寄存器原始值解析为 Int16、UInt32、Float、字符串等类型。");
+        SetGridToolTip(_pollingGrid, "字节序", "ABCD、CDAB、BADC、DCBA 四种寄存器与字节排列方式。");
+        SetGridToolTip(_pollingGrid, "趋势", "勾选后将任务采样结果写入趋势数据缓冲区。");
+        SetGridToolTip(_pollingGrid, "显示", "控制该任务曲线是否在趋势图中显示。");
+        SetGridToolTip(_pollingGrid, "运行", "当前任务是否正在由轮询调度器执行。");
+
+        SetToolTip(_slaveTypeCombo, "选择 RTU 串口从站或 TCP 网络从站。");
+        SetToolTip(_slaveSerialPortCombo, "从站监听使用的串口，不能与同一时间占用该串口的主站重复。");
+        SetToolTip(_slaveBaudRateInput, "RTU 从站波特率，必须与主站一致。");
+        SetToolTip(_slaveDataBitsInput, "RTU 从站数据位，必须与主站一致。");
+        SetToolTip(_slaveParityCombo, "RTU 从站校验方式，必须与主站一致。");
+        SetToolTip(_slaveStopBitsCombo, "RTU 从站停止位，必须与主站一致。");
+        SetToolTip(_slaveListenAddressInput, "TCP 从站绑定地址，0.0.0.0 表示监听本机所有网卡。");
+        SetToolTip(_slaveListenPortInput, "TCP 从站监听端口，主站连接时使用相同端口。");
+        SetToolTip(_slaveUnitGrid, "每个 UnitID 拥有独立的线圈、离散输入、保持寄存器和输入寄存器。");
+        SetToolTip(_slaveRuleGrid, "可按从站、功能码和地址范围注入指定 Modbus 异常码，用于联调异常处理。");
+        SetToolTip(_slaveManualUnitInput, "要修改的模拟从站 UnitID。");
+        SetToolTip(_slaveManualAreaCombo, "选择要读取或写入的模拟数据区。");
+        SetToolTip(_slaveManualAddressInput, "模拟数据区的起始地址，使用 0 基协议地址。");
+        SetToolTip(_slaveManualCountInput, "要读取或写入的元素数量。");
+        SetToolTip(_slaveManualValuesInput, "输入模拟值，多个值用逗号、分号或空格分隔。");
+        SetToolTip(_slaveManualResultBox, "最近一次从站模拟数据读写结果。");
+        SetToolTip(_slaveFrameBox, "从站收到的请求和发出的响应报文，带毫秒时间戳。");
+
+        SetToolTip(_trendWindowCombo, "只显示最近 1 分钟、5 分钟或 30 分钟的趋势数据。");
+        SetToolTip(_trendPauseCheck, "暂停图表刷新；后台轮询和环形缓冲区仍可继续采样。");
+        SetToolTip(_trendCapacityInput, "每条曲线的环形缓冲区容量，超过后覆盖最旧采样点。");
+        SetToolTip(_trendSeriesList, "勾选或取消勾选曲线，控制其在图表中的显示状态。");
+        SetToolTip(_trendChart, "鼠标移动到曲线上可查看对应时间点的采样值。");
+
+        SetToolTip(_logLevelCombo, "按 Debug、Info、Warn、Error 级别过滤日志。");
+        SetToolTip(_logSearchInput, "按报文、解析含义或错误提示关键字筛选日志。");
+        SetToolTip(_logPauseButton, "暂停或继续采集新日志，已存在的历史记录不会丢失。");
+        SetToolTip(_logGrid, "日志包含时间戳、Role、方向、原始十六进制和解析含义。");
+
+        SetButtonToolTip(_connectionPage, "刷新", "重新枚举本机串口。");
+        SetButtonToolTip(_connectionPage, "字节序探测", "读取连续寄存器并比较 ABCD、CDAB、BADC、DCBA 四种解析结果。");
+        SetButtonToolTip(_pollingPage, "新增任务", "添加一条轮询任务。");
+        SetButtonToolTip(_pollingPage, "删除任务", "删除当前选中任务；支持 Ctrl/Shift 多选。");
+        SetButtonToolTip(_pollingPage, "点位表", "打开点位表，保存常用点位并生成轮询任务。");
+        SetButtonToolTip(_pollingPage, "启动选中", "启动所有选中的轮询任务。");
+        SetButtonToolTip(_pollingPage, "启动全部", "启动所有已启用的轮询任务。");
+        SetButtonToolTip(_pollingPage, "停止选中", "停止所有选中的轮询任务。");
+        SetButtonToolTip(_pollingPage, "停止全部", "停止全部轮询任务。");
+        SetButtonToolTip(_pollingPage, "曲线颜色", "为当前任务选择趋势曲线颜色。");
+        SetButtonToolTip(_slavePage, "刷新", "重新枚举从站可用串口。");
+        SetToolTip(_slaveStartButton, "启动当前配置的 RTU 或 TCP 从站监听。");
+        SetToolTip(_slaveStopButton, "停止从站监听并释放串口或 TCP 端口。");
+        SetButtonToolTip(_slavePage, "新增单元", "添加一个独立 UnitID 的模拟从站单元。");
+        SetButtonToolTip(_slavePage, "删除单元", "删除当前选中的模拟从站单元。");
+        SetButtonToolTip(_slavePage, "新增规则", "新增一条异常注入规则。");
+        SetButtonToolTip(_slavePage, "删除规则", "删除当前选中的异常注入规则。");
+        SetButtonToolTip(_slavePage, "应用规则", "将表格中的异常注入规则应用到当前模拟从站。");
+        SetButtonToolTip(_slavePage, "读取当前值", "读取模拟从站指定区域的当前值。");
+        SetButtonToolTip(_slavePage, "写入模拟数据", "修改模拟从站指定区域的数据。");
+        SetButtonToolTip(_trendPage, "导出图片", "将当前趋势图导出为 PNG 文件。");
+        SetButtonToolTip(_logPage, "导出 CSV", "以 UTF-8 with BOM 编码导出 RFC 4180 CSV 日志。");
+        SetButtonToolTip(_logPage, "导出 TXT", "以 UTF-8 with BOM 编码导出文本日志。");
+        SetButtonToolTip(_logPage, "清空日志", "清除当前内存中的日志记录。");
+    }
+
+    private void SetToolTip(Control control, string text)
+    {
+        _toolTip.SetToolTip(control, text);
+    }
+
+    private static void SetGridToolTip(DataGridView grid, string headerText, string text)
+    {
+        DataGridViewColumn? column = grid.Columns
+            .Cast<DataGridViewColumn>()
+            .FirstOrDefault(item => string.Equals(
+                item.HeaderText,
+                headerText,
+                StringComparison.Ordinal));
+        if (column is not null)
+        {
+            column.HeaderCell.ToolTipText = text;
+        }
+    }
+
+    private void SetButtonToolTip(Control root, string buttonText, string text)
+    {
+        foreach (Control control in EnumerateControls(root))
+        {
+            if (control is Button button
+                && string.Equals(button.Text, buttonText, StringComparison.Ordinal))
+            {
+                _toolTip.SetToolTip(button, text);
+            }
+        }
+    }
+
+    private static IEnumerable<Control> EnumerateControls(Control parent)
+    {
+        foreach (Control child in parent.Controls)
+        {
+            yield return child;
+            foreach (Control nested in EnumerateControls(child))
+            {
+                yield return nested;
+            }
+        }
     }
 
     private void SubscribeServiceEvents()
