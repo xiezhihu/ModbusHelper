@@ -63,8 +63,8 @@ public sealed partial class MainForm
             Padding = new Padding(8)
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 160F));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 43F));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 57F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 55F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 45F));
 
         _slaveRootLayout = root;
         _slaveEndpointGroup = CreateSlaveEndpointGroup();
@@ -75,7 +75,9 @@ public sealed partial class MainForm
             Orientation = Orientation.Vertical,
             FixedPanel = FixedPanel.Panel1
         };
-        UiHelpers.SetInitialSplitterLayout(configSplit, 720, 420, 360);
+        // 初始数据表需要同时显示 UnitID 和四个存储区列，给左侧保留足够宽度；
+        // 窄窗口仍允许用户拖动分隔条或使用表格横向滚动查看全部列。
+        UiHelpers.SetInitialSplitterLayout(configSplit, 800, 780, 360);
         configSplit.Panel1.Controls.Add(CreateSlaveUnitsGroup());
         configSplit.Panel2.Controls.Add(CreateSlaveRulesGroup());
         root.Controls.Add(configSplit, 0, 1);
@@ -241,26 +243,42 @@ public sealed partial class MainForm
 
     private GroupBox CreateSlaveUnitsGroup()
     {
-        GroupBox group = UiHelpers.CreateGroup(
-            "从站单元（UnitID）与各存储区初始值（格式：地址→值）");
+        GroupBox group = UiHelpers.CreateGroup("模拟设备与初始数据");
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1
+            RowCount = 3,
+            ColumnCount = 1,
+            AutoSize = false
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, UiHelpers.Scale(layout, 44)));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         FlowLayoutPanel toolbar = new()
         {
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false
         };
         toolbar.Controls.Add(UiHelpers.CreateButton("新增单元", AddSlaveUnit, 90));
         toolbar.Controls.Add(UiHelpers.CreateButton("删除单元", DeleteSlaveUnit, 90));
         layout.Controls.Add(toolbar, 0, 0);
+        layout.Controls.Add(new Label
+        {
+            AutoSize = true,
+            MaximumSize = new Size(UiHelpers.Scale(layout, 740), 0),
+            Text = "说明：每行代表一个从站，UnitID 必须与主站请求的从站地址一致。"
+                + Environment.NewLine
+                + "01/02/03/04 对应线圈、离散输入、保持寄存器、输入寄存器；例如 03 列填 40001 → 1234，"
+                + "主站读取 03 / 1 / 40001 返回 1234；空白表示未预置。",
+            ForeColor = Color.DarkSlateGray,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(10, 2, 4, 4)
+        }, 0, 1);
         ConfigureSlaveUnitGrid();
-        layout.Controls.Add(_slaveUnitGrid, 0, 1);
+        _slaveUnitGrid.MinimumSize = new Size(0, UiHelpers.Scale(_slaveUnitGrid, 62));
+        layout.Controls.Add(_slaveUnitGrid, 0, 2);
         group.Controls.Add(layout);
         return group;
     }
@@ -272,45 +290,55 @@ public sealed partial class MainForm
         _slaveUnitGrid.AllowUserToAddRows = false;
         _slaveUnitGrid.RowHeadersVisible = false;
         _slaveUnitGrid.BackgroundColor = Color.White;
+        _slaveUnitGrid.ShowCellToolTips = true;
         UiHelpers.ConfigureGridMetrics(_slaveUnitGrid);
         _slaveUnitGrid.DataSource = _slaveUnitEditors;
-        _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
+        AddSlaveUnitColumn(
+            nameof(SlaveUnitEditor.UnitId),
+            "UnitID",
+            "一行代表一个独立从站。主站请求中的“从站地址”必须等于这里的 UnitID。");
+        AddSlaveUnitColumn(
+            nameof(SlaveUnitEditor.HoldingRegisters),
+            "03 保持寄存器",
+            "主站功能码 03 读取此列；格式为“地址 → 值”，例如 40001 → 1234。");
+        AddSlaveUnitColumn(
+            nameof(SlaveUnitEditor.InputRegisters),
+            "04 输入寄存器",
+            "主站功能码 04 读取此列；格式为“地址 → 值”，例如 30001 → 1234。");
+        AddSlaveUnitColumn(
+            nameof(SlaveUnitEditor.Coils),
+            "01 线圈",
+            "主站功能码 01 读取此列；格式为“地址 → ON/OFF”，例如 1 → ON。");
+        AddSlaveUnitColumn(
+            nameof(SlaveUnitEditor.DiscreteInputs),
+            "02 离散输入",
+            "主站功能码 02 读取此列；格式为“地址 → ON/OFF”，例如 10001 → OFF。");
+    }
+
+    private void AddSlaveUnitColumn(string propertyName, string headerText, string toolTip)
+    {
+        DataGridViewTextBoxColumn column = new()
         {
-            DataPropertyName = nameof(SlaveUnitEditor.UnitId),
-            HeaderText = "UnitID（地址）",
-            Width = UiHelpers.Scale(_slaveUnitGrid, 92),
-            MinimumWidth = UiHelpers.Scale(_slaveUnitGrid, 112),
-            ValueType = typeof(byte)
-        });
-        _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
+            DataPropertyName = propertyName,
+            HeaderText = headerText,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            MinimumWidth = UiHelpers.Scale(_slaveUnitGrid, 100)
+        };
+        column.HeaderCell.ToolTipText = toolTip;
+        if (propertyName == nameof(SlaveUnitEditor.UnitId))
         {
-            DataPropertyName = nameof(SlaveUnitEditor.HoldingRegisters),
-            HeaderText = "保持寄存器",
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-        });
-        _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(SlaveUnitEditor.InputRegisters),
-            HeaderText = "输入寄存器",
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-        });
-        _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(SlaveUnitEditor.Coils),
-            HeaderText = "线圈",
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-        });
-        _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            DataPropertyName = nameof(SlaveUnitEditor.DiscreteInputs),
-            HeaderText = "离散输入",
-            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-        });
+            column.Width = UiHelpers.Scale(_slaveUnitGrid, 88);
+            column.MinimumWidth = UiHelpers.Scale(_slaveUnitGrid, 76);
+            column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            column.ValueType = typeof(byte);
+        }
+
+        _slaveUnitGrid.Columns.Add(column);
     }
 
     private GroupBox CreateSlaveRulesGroup()
     {
-        GroupBox group = UiHelpers.CreateGroup("异常注入规则（请求范围命中时返回指定异常）");
+        GroupBox group = UiHelpers.CreateGroup("异常注入规则");
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
@@ -686,8 +714,8 @@ public sealed partial class MainForm
         _slaveUnitEditors.Add(new SlaveUnitEditor
         {
             UnitId = nextId,
-            HoldingRegisters = $"{registerAddress}=0",
-            Coils = $"{coilAddress}=0"
+            HoldingRegisters = $"{registerAddress} → 0",
+            Coils = $"{coilAddress} → OFF"
         });
         _slaveManualUnitInput.Value = nextId;
     }
@@ -1286,8 +1314,8 @@ public sealed partial class MainForm
         return string.Join(
             ", ",
             values.Select(value =>
-                $"地址 {ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}"
-                + $" → 值 {value.Value}"));
+                $"{ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}"
+                + $" → {value.Value}"));
     }
 
     private static string FormatCoilMap(
@@ -1298,7 +1326,7 @@ public sealed partial class MainForm
         return string.Join(
             ", ",
             values.Select(value =>
-                $"地址 {ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}"
-                + $" → {(value.Value ? "ON (1)" : "OFF (0)")}"));
+                $"{ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}"
+                + $" → {(value.Value ? "ON" : "OFF")}"));
     }
 }

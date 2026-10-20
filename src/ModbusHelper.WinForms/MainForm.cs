@@ -236,8 +236,12 @@ public sealed partial class MainForm : Form
         SetToolTip(_slaveStopBitsCombo, "RTU 从站停止位，必须与主站一致。");
         SetToolTip(_slaveListenAddressInput, "TCP 从站绑定地址，0.0.0.0 表示监听本机所有网卡。");
         SetToolTip(_slaveListenPortInput, "TCP 从站监听端口，主站连接时使用相同端口。");
-        SetToolTip(_slaveUnitGrid, "每一行是一个从站 UnitID，直接编辑该列设置地址；各存储区拥有独立地址空间，单元格按“地址→值”显示。");
-        SetToolTip(_slaveRuleGrid, "按 UnitID、功能码和地址范围匹配请求；“地址范围数量”是从起始地址开始连续覆盖的地址数，请求范围与之重叠即返回指定异常码。");
+        SetToolTip(
+            _slaveUnitGrid,
+            "每一行是一个独立的模拟从站；UnitID 必须与主站请求的从站地址一致。"
+            + "列名中的 01/02/03/04 就是主站读取时对应的功能码。"
+            + "单元格填写“地址 → 值”，例如 40001 → 1234；空白表示该区域没有预置值。");
+        SetToolTip(_slaveRuleGrid, "异常注入规则按 UnitID、功能码和地址范围匹配请求；“地址范围数量”是从起始地址开始连续覆盖的地址数，请求范围与之重叠即返回指定异常码。");
         SetToolTip(_slaveManualUnitInput, "要修改的模拟从站 UnitID；必须先在上方单元表中配置该地址，新增单元时会自动选中新单元。");
         SetToolTip(_slaveManualAreaCombo, "选择独立的数据区：同一个数字地址在保持寄存器、输入寄存器、线圈、离散输入中分别存储，互不相同。");
         SetToolTip(_slaveManualAddressInput, "模拟数据区的起始地址，遵循主界面当前地址基准；1 基时保持寄存器示例为 40001、输入寄存器为 30001。");

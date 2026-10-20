@@ -144,6 +144,26 @@ internal static class Program
             throw new InvalidOperationException("从站单元表的 UnitID 地址列不可编辑。");
         }
 
+        string[] expectedSlaveHeaders =
+        {
+            "UnitID",
+            "03 保持寄存器",
+            "04 输入寄存器",
+            "01 线圈",
+            "02 离散输入"
+        };
+        for (int index = 0; index < expectedSlaveHeaders.Length; index++)
+        {
+            if (!string.Equals(
+                    unitGrid.Columns[index].HeaderText,
+                    expectedSlaveHeaders[index],
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"从站初始数据表第 {index + 1} 列标题不清晰：{unitGrid.Columns[index].HeaderText}");
+            }
+        }
+
         // UI 冒烟测试使用独立的初始值，避免迁移到临时数据库的旧配置影响 RTU 自环。
         ComboBox smokeAddressBaseCombo = GetField<ComboBox>(form, "_addressBaseCombo");
         int smokeHoldingAddress = smokeAddressBaseCombo.Text.Contains(
