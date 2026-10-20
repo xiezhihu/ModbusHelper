@@ -37,6 +37,7 @@ public sealed partial class MainForm
     private readonly DataGridView _slaveRuleGrid = new();
     private readonly BindingList<SlaveUnitEditor> _slaveUnitEditors = new();
     private readonly BindingList<ExceptionRuleEditor> _slaveRuleEditors = new();
+    private readonly LinkedList<string> _slaveManualHistory = new();
     private readonly NumericUpDown _slaveManualUnitInput =
         UiHelpers.CreateNumber(1, 247, 1);
     private readonly ComboBox _slaveManualAreaCombo = UiHelpers.CreateCombo();
@@ -55,16 +56,19 @@ public sealed partial class MainForm
     private void InitializeSlavePage()
     {
         _slavePage.BackColor = Color.FromArgb(244, 247, 248);
+        _slavePage.AutoScroll = true;
         TableLayoutPanel root = new()
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             RowCount = 3,
             ColumnCount = 1,
-            Padding = new Padding(8)
+            Padding = new Padding(8),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 160F));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 55F));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 45F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, UiHelpers.Scale(root, 230)));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, UiHelpers.Scale(root, 195)));
 
         _slaveRootLayout = root;
         _slaveEndpointGroup = CreateSlaveEndpointGroup();
@@ -243,17 +247,16 @@ public sealed partial class MainForm
 
     private GroupBox CreateSlaveUnitsGroup()
     {
-        GroupBox group = UiHelpers.CreateGroup("模拟设备与初始数据");
+        GroupBox group = UiHelpers.CreateGroup("模拟设备与初始数据（启动时加载）");
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
-            RowCount = 3,
+            RowCount = 2,
             ColumnCount = 1,
             AutoSize = false
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, UiHelpers.Scale(layout, 44)));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         FlowLayoutPanel toolbar = new()
         {
@@ -264,21 +267,9 @@ public sealed partial class MainForm
         toolbar.Controls.Add(UiHelpers.CreateButton("新增单元", AddSlaveUnit, 90));
         toolbar.Controls.Add(UiHelpers.CreateButton("删除单元", DeleteSlaveUnit, 90));
         layout.Controls.Add(toolbar, 0, 0);
-        layout.Controls.Add(new Label
-        {
-            AutoSize = true,
-            MaximumSize = new Size(UiHelpers.Scale(layout, 740), 0),
-            Text = "说明：每行代表一个从站，UnitID 必须与主站请求的从站地址一致。"
-                + Environment.NewLine
-                + "01/02/03/04 对应线圈、离散输入、保持寄存器、输入寄存器；例如 03 列填 40001 → 1234，"
-                + "主站读取 03 / 1 / 40001 返回 1234；空白表示未预置。",
-            ForeColor = Color.DarkSlateGray,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(10, 2, 4, 4)
-        }, 0, 1);
         ConfigureSlaveUnitGrid();
         _slaveUnitGrid.MinimumSize = new Size(0, UiHelpers.Scale(_slaveUnitGrid, 62));
-        layout.Controls.Add(_slaveUnitGrid, 0, 2);
+        layout.Controls.Add(_slaveUnitGrid, 0, 1);
         group.Controls.Add(layout);
         return group;
     }
@@ -295,24 +286,24 @@ public sealed partial class MainForm
         _slaveUnitGrid.DataSource = _slaveUnitEditors;
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.UnitId),
-            "UnitID",
-            "一行代表一个独立从站。主站请求中的“从站地址”必须等于这里的 UnitID。");
+            "从站地址",
+            "一行代表一个独立从站。这里的从站地址就是 Modbus UnitID，必须与主站请求一致。");
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.HoldingRegisters),
             "03 保持寄存器",
-            "主站功能码 03 读取此列；格式为“地址 → 值”，例如 40001 → 1234。");
+            "主站功能码 03 读取此列；格式为“地址 = 值”，例如 40001 = 1234。");
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.InputRegisters),
             "04 输入寄存器",
-            "主站功能码 04 读取此列；格式为“地址 → 值”，例如 30001 → 1234。");
+            "主站功能码 04 读取此列；格式为“地址 = 值”，例如 30001 = 1234。");
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.Coils),
             "01 线圈",
-            "主站功能码 01 读取此列；格式为“地址 → ON/OFF”，例如 1 → ON。");
+            "主站功能码 01 读取此列；格式为“地址 = ON/OFF”，例如 1 = ON。");
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.DiscreteInputs),
             "02 离散输入",
-            "主站功能码 02 读取此列；格式为“地址 → ON/OFF”，例如 10001 → OFF。");
+            "主站功能码 02 读取此列；格式为“地址 = ON/OFF”，例如 10001 = OFF。");
     }
 
     private void AddSlaveUnitColumn(string propertyName, string headerText, string toolTip)
@@ -369,25 +360,34 @@ public sealed partial class MainForm
         _slaveRuleGrid.AllowUserToAddRows = false;
         _slaveRuleGrid.RowHeadersVisible = false;
         _slaveRuleGrid.BackgroundColor = Color.White;
+        _slaveRuleGrid.ShowCellToolTips = true;
         UiHelpers.ConfigureGridMetrics(_slaveRuleGrid);
         _slaveRuleGrid.DataSource = _slaveRuleEditors;
         _slaveRuleGrid.CellFormatting += OnSlaveRuleGridCellFormatting;
         _slaveRuleGrid.CellParsing += OnSlaveRuleGridCellParsing;
-        _slaveRuleGrid.Columns.Add(new DataGridViewCheckBoxColumn
+        DataGridViewCheckBoxColumn enabledColumn = new()
         {
             DataPropertyName = nameof(ExceptionRuleEditor.Enabled),
             HeaderText = "启用",
             Width = UiHelpers.Scale(_slaveRuleGrid, 52),
             MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 48)
-        });
-        _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
+        };
+        enabledColumn.HeaderCell.ToolTipText = "勾选后规则参与匹配；取消勾选后规则保留，但不会触发异常。";
+        _slaveRuleGrid.Columns.Add(enabledColumn);
+        DataGridViewTextBoxColumn unitColumn = new()
         {
             DataPropertyName = nameof(ExceptionRuleEditor.UnitId),
-            HeaderText = "从站",
-            Width = UiHelpers.Scale(_slaveRuleGrid, 56),
-            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 52),
+            HeaderText = "从站地址",
+            Width = Math.Max(
+                UiHelpers.Scale(_slaveRuleGrid, 56),
+                TextRenderer.MeasureText("从站地址", _slaveRuleGrid.Font).Width
+                + UiHelpers.Scale(_slaveRuleGrid, 16)),
+            MinimumWidth = TextRenderer.MeasureText("从站地址", _slaveRuleGrid.Font).Width
+                + UiHelpers.Scale(_slaveRuleGrid, 16),
             ValueType = typeof(byte)
-        });
+        };
+        unitColumn.HeaderCell.ToolTipText = "这里的从站地址就是 Modbus UnitID，必须与主站请求中的从站地址相同。";
+        _slaveRuleGrid.Columns.Add(unitColumn);
         DataGridViewComboBoxColumn functionColumn = new()
         {
             DataPropertyName = nameof(ExceptionRuleEditor.Function),
@@ -405,51 +405,64 @@ public sealed partial class MainForm
             FlatStyle = FlatStyle.Standard,
             DefaultCellStyle = { Padding = Padding.Empty }
         };
+        functionColumn.HeaderCell.ToolTipText = "主站请求功能码必须与这里相同，例如 03 读保持寄存器。";
         _slaveRuleGrid.Columns.Add(functionColumn);
-        _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
+        DataGridViewTextBoxColumn addressColumn = new()
         {
             DataPropertyName = nameof(ExceptionRuleEditor.StartAddress),
-            HeaderText = "地址",
-            Width = UiHelpers.Scale(_slaveRuleGrid, 58),
-            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 54),
+            HeaderText = "起始地址",
+            Width = Math.Max(
+                UiHelpers.Scale(_slaveRuleGrid, 58),
+                TextRenderer.MeasureText("起始地址", _slaveRuleGrid.Font).Width
+                + UiHelpers.Scale(_slaveRuleGrid, 16)),
+            MinimumWidth = TextRenderer.MeasureText("起始地址", _slaveRuleGrid.Font).Width
+                + UiHelpers.Scale(_slaveRuleGrid, 16),
             ValueType = typeof(ushort)
-        });
-        _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
+        };
+        addressColumn.HeaderCell.ToolTipText = "规则覆盖范围的第一个地址；1 基模式下例如 40001。";
+        _slaveRuleGrid.Columns.Add(addressColumn);
+        DataGridViewTextBoxColumn countColumn = new()
         {
             DataPropertyName = nameof(ExceptionRuleEditor.Count),
-            HeaderText = "地址范围数量",
+            HeaderText = "连续地址数",
             Width = UiHelpers.Scale(_slaveRuleGrid, 92),
             MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 84),
             ValueType = typeof(ushort)
-        });
-        _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
+        };
+        countColumn.HeaderCell.ToolTipText = "从起始地址开始连续覆盖的地址数量；填 1 只覆盖起始地址。";
+        _slaveRuleGrid.Columns.Add(countColumn);
+        DataGridViewTextBoxColumn exceptionColumn = new()
         {
             DataPropertyName = nameof(ExceptionRuleEditor.ExceptionCode),
             HeaderText = "异常码",
             Width = UiHelpers.Scale(_slaveRuleGrid, 64),
             MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 60),
             ValueType = typeof(byte)
-        });
+        };
+        exceptionColumn.HeaderCell.ToolTipText = "命中规则时从站返回的 Modbus 异常码，例如 02=非法数据地址。";
+        _slaveRuleGrid.Columns.Add(exceptionColumn);
     }
 
     private GroupBox CreateSlaveManualGroup()
     {
-        GroupBox group = UiHelpers.CreateGroup("手动修改模拟数据");
+        GroupBox group = UiHelpers.CreateGroup("运行中手动修改模拟数据");
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 112F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         TableLayoutPanel fields = new()
         {
             Dock = DockStyle.Fill,
             ColumnCount = 4,
             RowCount = 3,
-            Padding = new Padding(4)
+            Padding = new Padding(4),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiHelpers.Scale(fields, 108)));
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
@@ -458,7 +471,7 @@ public sealed partial class MainForm
         fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
         fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
         fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
-        fields.Controls.Add(UiHelpers.CreateLabel("UnitID"), 0, 0);
+        fields.Controls.Add(UiHelpers.CreateLabel("从站地址"), 0, 0);
         fields.Controls.Add(_slaveManualUnitInput, 1, 0);
         fields.Controls.Add(UiHelpers.CreateLabel("存储区域"), 2, 0);
         fields.Controls.Add(_slaveManualAreaCombo, 3, 0);
@@ -473,8 +486,10 @@ public sealed partial class MainForm
 
         FlowLayoutPanel actions = new()
         {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight
+            Dock = DockStyle.Top,
+            FlowDirection = FlowDirection.LeftToRight,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
         actions.Controls.Add(UiHelpers.CreateButton("读取当前值", ReadSlaveManualValues, 100));
         actions.Controls.Add(UiHelpers.CreateButton("写入模拟数据", WriteSlaveManualValues, 112));
@@ -661,7 +676,9 @@ public sealed partial class MainForm
         _slaveEndpointGroup.PerformLayout();
         int preferredHeight = _slaveEndpointGroup.GetPreferredSize(
             new Size(_slaveRootLayout.ClientSize.Width, 0)).Height;
-        _slaveRootLayout.RowStyles[0].Height = Math.Max(160, preferredHeight + 8);
+        _slaveRootLayout.RowStyles[0].Height = Math.Max(
+            UiHelpers.Scale(_slaveRootLayout, 160),
+            preferredHeight + UiHelpers.Scale(_slaveRootLayout, 8));
         _slaveRootLayout.PerformLayout();
     }
 
@@ -714,8 +731,8 @@ public sealed partial class MainForm
         _slaveUnitEditors.Add(new SlaveUnitEditor
         {
             UnitId = nextId,
-            HoldingRegisters = $"{registerAddress} → 0",
-            Coils = $"{coilAddress} → OFF"
+            HoldingRegisters = $"{registerAddress} = 0",
+            Coils = $"{coilAddress} = OFF"
         });
         _slaveManualUnitInput.Value = nextId;
     }
@@ -812,6 +829,7 @@ public sealed partial class MainForm
                 (int)_slaveManualAddressInput.Value,
                 UiHelpers.GetSelectedValue(_addressBaseCombo, AddressBase.ZeroBased),
                 function);
+            object valuesToWrite;
             if (area is SlaveArea.Coils or SlaveArea.DiscreteInputs)
             {
                 bool[] values = ParseCoils(_slaveManualValuesInput.Text);
@@ -821,6 +839,7 @@ public sealed partial class MainForm
                     address,
                     values);
                 _slaveManualCountInput.Value = values.Length;
+                valuesToWrite = values;
             }
             else
             {
@@ -831,13 +850,19 @@ public sealed partial class MainForm
                     address,
                     values);
                 _slaveManualCountInput.Value = values.Length;
+                valuesToWrite = values;
             }
 
-            ReadSlaveManualValues();
+            AppendSlaveManualHistory(
+                $"写入成功 | 从站地址（UnitID）：{unitId} | 区域：{GetSlaveAreaText(area)}"
+                + $"{Environment.NewLine}显示地址：{_slaveManualAddressInput.Value}"
+                + $"{Environment.NewLine}协议地址：{address}"
+                + $"{Environment.NewLine}值：{FormatSlaveValues(valuesToWrite)}");
         }
         catch (ArgumentOutOfRangeException exception)
             when (exception.ParamName == "inputAddress")
         {
+            AppendSlaveManualHistory("写入失败 | " + GetSlaveAddressInputError());
             MessageBox.Show(
                 this,
                 GetSlaveAddressInputError(),
@@ -847,6 +872,7 @@ public sealed partial class MainForm
         }
         catch (Exception exception)
         {
+            AppendSlaveManualHistory("写入失败 | " + exception.Message);
             MessageBox.Show(
                 this,
                 exception.Message,
@@ -862,7 +888,7 @@ public sealed partial class MainForm
         if (!_slaveUnitEditors.Any(editor => editor.UnitId == unitId))
         {
             throw new InvalidOperationException(
-                $"单元表中没有配置 UnitID {unitId}。请先新增或选择已配置的从站单元。");
+                $"单元表中没有配置从站地址（UnitID）{unitId}。请先新增或选择已配置的从站单元。");
         }
 
         return unitId;
@@ -887,31 +913,52 @@ public sealed partial class MainForm
                 area,
                 address,
                 count);
-            string formatted = values switch
-            {
-                ushort[] registers => string.Join(
-                    ", ",
-                    registers.Select(value => $"{value} (0x{value:X4})")),
-                bool[] coils => string.Join(
-                    ", ",
-                    coils.Select(value => value ? "ON (1)" : "OFF (0)")),
-                _ => values.ToString() ?? string.Empty
-            };
-            _slaveManualResultBox.Text =
-                $"UnitID：{_slaveManualUnitInput.Value}    区域：{GetSlaveAreaText(area)}"
+            string formatted = FormatSlaveValues(values);
+            AppendSlaveManualHistory(
+                $"读取成功 | 从站地址（UnitID）：{_slaveManualUnitInput.Value} | 区域：{GetSlaveAreaText(area)}"
                 + $"{Environment.NewLine}显示地址：{_slaveManualAddressInput.Value}"
                 + $"{Environment.NewLine}协议地址：{address}"
-                + $"{Environment.NewLine}值：{formatted}";
+                + $"{Environment.NewLine}值：{formatted}");
         }
         catch (ArgumentOutOfRangeException exception)
             when (exception.ParamName == "inputAddress")
         {
-            _slaveManualResultBox.Text = GetSlaveAddressInputError();
+            AppendSlaveManualHistory("读取失败 | " + GetSlaveAddressInputError());
         }
         catch (Exception exception)
         {
-            _slaveManualResultBox.Text = exception.Message;
+            AppendSlaveManualHistory("读取失败 | " + exception.Message);
         }
+    }
+
+    private void AppendSlaveManualHistory(string message)
+    {
+        string entry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} : {message}";
+        _slaveManualHistory.AddFirst(entry);
+        while (_slaveManualHistory.Count > 100)
+        {
+            _slaveManualHistory.RemoveLast();
+        }
+
+        _slaveManualResultBox.Text = string.Join(
+            Environment.NewLine + Environment.NewLine,
+            _slaveManualHistory);
+        _slaveManualResultBox.SelectionStart = 0;
+        _slaveManualResultBox.SelectionLength = 0;
+    }
+
+    private static string FormatSlaveValues(object values)
+    {
+        return values switch
+        {
+            ushort[] registers => string.Join(
+                ", ",
+                registers.Select(value => $"{value} (0x{value:X4})")),
+            bool[] coils => string.Join(
+                ", ",
+                coils.Select(value => value ? "ON (1)" : "OFF (0)")),
+            _ => values.ToString() ?? string.Empty
+        };
     }
 
     private string GetSlaveAddressInputError()
@@ -1277,11 +1324,11 @@ public sealed partial class MainForm
         out string addressText,
         out string valueText)
     {
-        int separatorIndex = entry.IndexOf('→');
+        int separatorIndex = entry.IndexOf('=');
         int separatorLength = 1;
         if (separatorIndex < 0)
         {
-            separatorIndex = entry.IndexOf('=');
+            separatorIndex = entry.IndexOf('→');
         }
 
         if (separatorIndex < 0)
@@ -1315,7 +1362,7 @@ public sealed partial class MainForm
             ", ",
             values.Select(value =>
                 $"{ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}"
-                + $" → {value.Value}"));
+                + $" = {value.Value}"));
     }
 
     private static string FormatCoilMap(
@@ -1327,6 +1374,6 @@ public sealed partial class MainForm
             ", ",
             values.Select(value =>
                 $"{ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}"
-                + $" → {(value.Value ? "ON" : "OFF")}"));
+                + $" = {(value.Value ? "ON" : "OFF")}"));
     }
 }

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
@@ -146,7 +147,7 @@ internal static class Program
 
         string[] expectedSlaveHeaders =
         {
-            "UnitID",
+            "从站地址",
             "03 保持寄存器",
             "04 输入寄存器",
             "01 线圈",
@@ -208,11 +209,14 @@ internal static class Program
             ?? throw new InvalidOperationException("未找到写入模拟数据按钮。")).PerformClick();
         string manualSlaveResult = GetField<TextBox>(form, "_slaveManualResultBox").Text;
         if (!manualSlaveResult.Contains("协议地址：0", StringComparison.Ordinal)
-            || !manualSlaveResult.Contains("0x002A", StringComparison.Ordinal))
+            || !manualSlaveResult.Contains("0x002A", StringComparison.Ordinal)
+            || !manualSlaveResult.Contains(" : 写入成功", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"从站手动模拟未写入 1 基地址 40001 对应的协议地址 0：{manualSlaveResult}");
         }
+
+        CheckSlaveRuntimeChanges(form, slaveStart, slaveState, unitGrid);
 
         Button connect = GetField<Button>(form, "_connectButton");
         Label headerStatus = GetField<Label>(form, "_headerStatusLabel");
@@ -536,6 +540,12 @@ internal static class Program
             Pump(TimeSpan.FromMilliseconds(120));
             TabPage page = tabs.TabPages[index];
             CheckLayout(page);
+            if (index == 2)
+            {
+                AssertSlaveGridViewport(GetField<DataGridView>(form, "_slaveUnitGrid"));
+                AssertSlaveGridViewport(GetField<DataGridView>(form, "_slaveRuleGrid"));
+            }
+
             lines.Add($"页签：{page.Text}，尺寸 {page.ClientSize.Width}x{page.ClientSize.Height}");
             AppendControlReport(page, lines, 1);
         }
@@ -544,6 +554,111 @@ internal static class Program
             Path.Combine(outputDirectory, reportFileName),
             lines,
             System.Text.Encoding.UTF8);
+    }
+
+    private static void CheckSlaveRuntimeChanges(
+        Form form,
+        Button slaveStart,
+        Label slaveState,
+        DataGridView unitGrid)
+    {
+        Button read = FindButton(form, "读取当前值")
+            ?? throw new InvalidOperationException("未找到读取当前值按钮。");
+        Button write = FindButton(form, "写入模拟数据")
+            ?? throw new InvalidOperationException("未找到写入模拟数据按钮。");
+        TextBox result = GetField<TextBox>(form, "_slaveManualResultBox");
+
+        // 运行中编辑初始表不应覆盖当前内存；只有重新启动才加载初始表。
+        unitGrid.Rows[0].Cells[1].Value = "40001 = 100";
+        unitGrid.EndEdit();
+        read.PerformClick();
+        if (!result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
+                StringSplitOptions.None)[0].Contains("42 (0x002A)", StringComparison.Ordinal)
+            || !result.Text.Contains(" : 写入成功", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("编辑初始值影响了运行内存，或读写历史被覆盖。");
+        }
+
+        GetField<TextBox>(form, "_slaveManualValuesInput").Text = "125";
+        write.PerformClick();
+        if (!result.Text.StartsWith(
+                DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                StringComparison.Ordinal)
+            || !result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
+                StringSplitOptions.None)[0].Contains("125 (0x007D)", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("运行中写入未即时生效或没有毫秒时间戳历史。");
+        }
+
+        GetField<Button>(form, "_slaveStopButton").PerformClick();
+        PumpUntil(() => slaveStart.Enabled, TimeSpan.FromSeconds(5));
+        slaveStart.PerformClick();
+        PumpUntil(() => slaveState.Text.Contains("监听", StringComparison.Ordinal), TimeSpan.FromSeconds(5));
+        read.PerformClick();
+        if (!result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
+                StringSplitOptions.None)[0].Contains("100 (0x0064)", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("从站重启后没有恢复初始表中的值 100。");
+        }
+
+        ComboBox addressBase = GetField<ComboBox>(form, "_addressBaseCombo");
+        SelectComboByText(addressBase, "0 基");
+        if (!Convert.ToString(unitGrid.Rows[0].Cells[1].Value, CultureInfo.InvariantCulture)!
+                .Contains("0 = 100", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("0 基模式下初始值没有按“地址 = 值”格式显示。");
+        }
+
+        SelectComboByText(addressBase, "1 基");
+        string initialValueText = Convert.ToString(
+            unitGrid.Rows[0].Cells[1].Value,
+            CultureInfo.InvariantCulture)!;
+        if (!initialValueText.Contains("40001 = 100", StringComparison.Ordinal)
+            || initialValueText.Contains('→'))
+        {
+            throw new InvalidOperationException("1 基模式下初始值地址或“地址 = 值”格式错误。");
+        }
+
+        for (int index = 0; index < 105; index++)
+        {
+            read.PerformClick();
+        }
+
+        string[] entries = result.Text.Split(
+            new[] { Environment.NewLine + Environment.NewLine },
+            StringSplitOptions.None);
+        if (entries.Length != 100 || entries.Any(entry => !entry.Contains(" : ", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("手动模拟结果历史未限制为最近 100 条带时间戳的记录。");
+        }
+
+        GetField<TextBox>(form, "_slaveManualValuesInput").Text = "42";
+        write.PerformClick();
+    }
+
+    private static void AssertSlaveGridViewport(DataGridView grid)
+    {
+        Rectangle visibleBounds = grid.RectangleToScreen(grid.ClientRectangle);
+        for (Control? parent = grid.Parent;
+             parent is not null && parent is not TabPage;
+             parent = parent.Parent)
+        {
+            visibleBounds.Intersect(parent.RectangleToScreen(parent.ClientRectangle));
+        }
+
+        Rectangle headerAndRow = grid.RectangleToScreen(new Rectangle(
+            0,
+            0,
+            1,
+            grid.ColumnHeadersHeight + grid.RowTemplate.Height + 2));
+        if (visibleBounds.Top > headerAndRow.Top
+            || visibleBounds.Bottom < headerAndRow.Bottom)
+        {
+            throw new InvalidOperationException(
+                $"从站表格表头和首行被祖先容器裁切：{DescribePath(grid)}，"
+                + $"可见区域纵向范围 {visibleBounds.Top}..{visibleBounds.Bottom}，"
+                + $"表头和首行纵向范围 {headerAndRow.Top}..{headerAndRow.Bottom}。");
+        }
     }
 
     private static void CheckLayout(Control page)

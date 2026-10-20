@@ -238,16 +238,24 @@ public sealed partial class MainForm : Form
         SetToolTip(_slaveListenPortInput, "TCP 从站监听端口，主站连接时使用相同端口。");
         SetToolTip(
             _slaveUnitGrid,
-            "每一行是一个独立的模拟从站；UnitID 必须与主站请求的从站地址一致。"
+            "每一行是一个独立的模拟从站；表格中的“从站地址”就是 UnitID，必须与主站请求一致。"
+            + "此表设置从站启动时的初始值；运行中修改表格不会改变当前内存，停止并重新启动后才加载新值。"
             + "列名中的 01/02/03/04 就是主站读取时对应的功能码。"
-            + "单元格填写“地址 → 值”，例如 40001 → 1234；空白表示该区域没有预置值。");
-        SetToolTip(_slaveRuleGrid, "异常注入规则按 UnitID、功能码和地址范围匹配请求；“地址范围数量”是从起始地址开始连续覆盖的地址数，请求范围与之重叠即返回指定异常码。");
-        SetToolTip(_slaveManualUnitInput, "要修改的模拟从站 UnitID；必须先在上方单元表中配置该地址，新增单元时会自动选中新单元。");
+            + "单元格填写“地址 = 值”，例如 40001 = 1234；空白表示该区域没有预置值。");
+        SetToolTip(
+            _slaveRuleGrid,
+            "规则只有在“启用”勾选且点击“应用规则”后才参与匹配。"
+            + "触发条件是 UnitID、功能码相同，并且主站请求地址范围与规则范围有交集。"
+            + "连续地址数填 1 时只覆盖起始地址，例如 40001 和数量 1 只匹配 40001。");
+        SetToolTip(_slaveManualUnitInput, "要修改的模拟从站地址（UnitID）；必须先在上方单元表中配置该地址，新增单元时会自动选中新单元。");
         SetToolTip(_slaveManualAreaCombo, "选择独立的数据区：同一个数字地址在保持寄存器、输入寄存器、线圈、离散输入中分别存储，互不相同。");
         SetToolTip(_slaveManualAddressInput, "模拟数据区的起始地址，遵循主界面当前地址基准；1 基时保持寄存器示例为 40001、输入寄存器为 30001。");
         SetToolTip(_slaveManualCountInput, "要读取或写入的连续元素数量；寄存器是 ushort，线圈和离散输入是 0/1。");
-        SetToolTip(_slaveManualValuesInput, "输入要写入的模拟值，多个值用逗号、分号或空格分隔；寄存器可写十进制或 0x 十六进制，线圈使用 0/1 或 ON/OFF。");
-        SetToolTip(_slaveManualResultBox, "最近一次从站模拟数据读写结果。");
+        SetToolTip(
+            _slaveManualValuesInput,
+            "这里直接修改当前运行中的从站内存，主站下一次读取即可看到新值；停止后临时修改会丢失，重新启动会加载上方初始值。"
+            + "多个值用逗号、分号或空格分隔；寄存器可写十进制或 0x 十六进制，线圈使用 0/1 或 ON/OFF。");
+        SetToolTip(_slaveManualResultBox, "按时间倒序保留最近 100 条读取、写入和错误记录；写入只修改运行中的临时内存。");
         SetToolTip(_slaveFrameBox, "按时间倒序显示最近 200 条从站请求/响应，格式为完整时间戳、方向、原始十六进制报文和解析含义。");
 
         SetToolTip(_trendWindowCombo, "只显示最近 1 分钟、5 分钟或 30 分钟的趋势数据。");
