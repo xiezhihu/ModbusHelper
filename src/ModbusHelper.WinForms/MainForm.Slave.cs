@@ -32,6 +32,8 @@ public sealed partial class MainForm
         UiHelpers.CreateNumber(1, 65535, 502);
     private readonly Button _slaveStartButton = UiHelpers.CreateButton("启动从站", () => { }, 104);
     private readonly Button _slaveStopButton = UiHelpers.CreateButton("停止从站", () => { }, 104);
+    private readonly Button _slaveAddUnitButton = UiHelpers.CreateButton("新增单元", () => { }, 90);
+    private readonly Button _slaveDeleteUnitButton = UiHelpers.CreateButton("删除单元", () => { }, 90);
     private readonly Label _slaveStateLabel = UiHelpers.CreateLabel("已停止", true);
     private readonly DataGridView _slaveUnitGrid = new();
     private readonly DataGridView _slaveRuleGrid = new();
@@ -51,6 +53,8 @@ public sealed partial class MainForm
     private SlaveArea _slaveManualCurrentArea = SlaveArea.HoldingRegisters;
     private TableLayoutPanel? _slaveRootLayout;
     private GroupBox? _slaveEndpointGroup;
+    private GroupBox? _slaveUnitsGroup;
+    private bool _slaveStartPending;
     private long _lastSlaveFrameRevision = -1;
 
     private void InitializeSlavePage()
@@ -140,6 +144,8 @@ public sealed partial class MainForm
         _slaveManualAreaCombo.SelectedIndexChanged += OnSlaveManualAreaChanged;
         _slaveStartButton.Click += async (_, _) => await StartSlaveAsync();
         _slaveStopButton.Click += async (_, _) => await _services.SlaveSimulationManager.StopAsync();
+        _slaveAddUnitButton.Click += (_, _) => AddSlaveUnit();
+        _slaveDeleteUnitButton.Click += (_, _) => DeleteSlaveUnit();
         UpdateSlaveTypeVisibility();
     }
 
@@ -247,7 +253,8 @@ public sealed partial class MainForm
 
     private GroupBox CreateSlaveUnitsGroup()
     {
-        GroupBox group = UiHelpers.CreateGroup("模拟设备与初始数据（启动时加载）");
+        GroupBox group = UiHelpers.CreateGroup("模拟设备与初始数据（已停止时可编辑）");
+        _slaveUnitsGroup = group;
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
@@ -264,8 +271,8 @@ public sealed partial class MainForm
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false
         };
-        toolbar.Controls.Add(UiHelpers.CreateButton("新增单元", AddSlaveUnit, 90));
-        toolbar.Controls.Add(UiHelpers.CreateButton("删除单元", DeleteSlaveUnit, 90));
+        toolbar.Controls.Add(_slaveAddUnitButton);
+        toolbar.Controls.Add(_slaveDeleteUnitButton);
         layout.Controls.Add(toolbar, 0, 0);
         ConfigureSlaveUnitGrid();
         _slaveUnitGrid.MinimumSize = new Size(0, UiHelpers.Scale(_slaveUnitGrid, 62));
@@ -602,6 +609,8 @@ public sealed partial class MainForm
     {
         try
         {
+            _slaveUnitGrid.EndEdit();
+            _slaveRuleGrid.EndEdit();
             SlaveSimulationConfiguration configuration = BuildSlaveConfiguration();
             ValidationResult validation =
                 SlaveSimulationManager.ValidateConfiguration(configuration);
@@ -616,6 +625,8 @@ public sealed partial class MainForm
                 return;
             }
 
+            _slaveStartPending = true;
+            UpdateSlaveControls();
             _slaveStartButton.Enabled = false;
             await _services.SlaveSimulationManager.StartAsync(configuration);
             _configuration.SlaveSimulator = configuration;
@@ -631,15 +642,16 @@ public sealed partial class MainForm
         }
         finally
         {
-            _slaveStartButton.Enabled = true;
+            _slaveStartPending = false;
+            UpdateSlaveControls();
         }
     }
 
     private void UpdateSlaveState(bool listening, string message)
     {
-        _slaveStateLabel.Text = listening ? "监听中" : "已停止";
-        _slaveStateLabel.ForeColor = listening ? Color.DarkGreen : Color.DarkSlateGray;
-        _slaveStartButton.Enabled = !listening;
+        bool locked = listening || _slaveStartPending;
+        SetSlaveInitialDataLocked(locked);
+        _slaveStartButton.Enabled = !locked;
         _slaveStopButton.Enabled = listening;
         _slaveStateLabel.Text = message;
         _slaveStateLabel.AutoEllipsis = true;
@@ -653,8 +665,31 @@ public sealed partial class MainForm
     private void UpdateSlaveControls()
     {
         bool listening = _services.SlaveSimulationManager.IsListening;
-        _slaveStartButton.Enabled = !listening;
+        bool locked = listening || _slaveStartPending;
+        SetSlaveInitialDataLocked(locked);
+        _slaveStartButton.Enabled = !locked;
         _slaveStopButton.Enabled = listening;
+    }
+
+    private void SetSlaveInitialDataLocked(bool locked)
+    {
+        if (_slaveUnitGrid.IsCurrentCellInEditMode)
+        {
+            _slaveUnitGrid.EndEdit();
+        }
+
+        _slaveUnitGrid.ReadOnly = locked;
+        _slaveAddUnitButton.Enabled = !locked;
+        _slaveDeleteUnitButton.Enabled = !locked;
+        if (_slaveUnitsGroup is not null)
+        {
+            string stateText = !locked
+                ? "已停止时可编辑"
+                : _services.SlaveSimulationManager.IsListening
+                    ? "从站运行中，已锁定"
+                    : "从站启动中，已锁定";
+            _slaveUnitsGroup.Text = $"模拟设备与初始数据（{stateText}）";
+        }
     }
 
     private void UpdateSlaveTypeVisibility()

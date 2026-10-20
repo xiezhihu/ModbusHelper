@@ -105,6 +105,7 @@ internal static class Program
     {
         Button slaveStart = GetField<Button>(form, "_slaveStartButton");
         Label slaveState = GetField<Label>(form, "_slaveStateLabel");
+        GroupBox slaveUnitsGroup = GetField<GroupBox>(form, "_slaveUnitsGroup");
         int port = 0;
         tabs.SelectedIndex = 2;
         if (useRtu)
@@ -140,9 +141,12 @@ internal static class Program
             throw new InvalidOperationException("手动模拟默认 UnitID 未与已配置的首个从站单元同步。");
         }
 
-        if (unitGrid.ReadOnly || unitGrid.Columns[0].ReadOnly)
+        if (!unitGrid.ReadOnly
+            || GetField<Button>(form, "_slaveAddUnitButton").Enabled
+            || GetField<Button>(form, "_slaveDeleteUnitButton").Enabled
+            || !slaveUnitsGroup.Text.Contains("已锁定", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("从站单元表的 UnitID 地址列不可编辑。");
+            throw new InvalidOperationException("从站运行后，初始数据表及新增/删除单元操作必须锁定并显示原因。");
         }
 
         string[] expectedSlaveHeaders =
@@ -164,16 +168,6 @@ internal static class Program
                     $"从站初始数据表第 {index + 1} 列标题不清晰：{unitGrid.Columns[index].HeaderText}");
             }
         }
-
-        // UI 冒烟测试使用独立的初始值，避免迁移到临时数据库的旧配置影响 RTU 自环。
-        ComboBox smokeAddressBaseCombo = GetField<ComboBox>(form, "_addressBaseCombo");
-        int smokeHoldingAddress = smokeAddressBaseCombo.Text.Contains(
-            "1 基",
-            StringComparison.Ordinal)
-            ? 40001
-            : 0;
-        unitGrid.Rows[0].Cells[1].Value = $"{smokeHoldingAddress}=0";
-        unitGrid.EndEdit();
 
         SelectComboByText(GetField<ComboBox>(form, "_addressBaseCombo"), "1 基");
         NumericUpDown manualSlaveAddress = GetField<NumericUpDown>(form, "_slaveManualAddressInput");
@@ -566,17 +560,20 @@ internal static class Program
             ?? throw new InvalidOperationException("未找到读取当前值按钮。");
         Button write = FindButton(form, "写入模拟数据")
             ?? throw new InvalidOperationException("未找到写入模拟数据按钮。");
+        GroupBox slaveUnitsGroup = GetField<GroupBox>(form, "_slaveUnitsGroup");
         TextBox result = GetField<TextBox>(form, "_slaveManualResultBox");
 
-        // 运行中编辑初始表不应覆盖当前内存；只有重新启动才加载初始表。
-        unitGrid.Rows[0].Cells[1].Value = "40001 = 100";
-        unitGrid.EndEdit();
+        if (!unitGrid.ReadOnly)
+        {
+            throw new InvalidOperationException("从站运行时初始数据表应处于只读状态。");
+        }
+
         read.PerformClick();
         if (!result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
                 StringSplitOptions.None)[0].Contains("42 (0x002A)", StringComparison.Ordinal)
             || !result.Text.Contains(" : 写入成功", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("编辑初始值影响了运行内存，或读写历史被覆盖。");
+            throw new InvalidOperationException("运行中手动模拟读写未生效，或读写历史被覆盖。");
         }
 
         GetField<TextBox>(form, "_slaveManualValuesInput").Text = "125";
@@ -592,8 +589,23 @@ internal static class Program
 
         GetField<Button>(form, "_slaveStopButton").PerformClick();
         PumpUntil(() => slaveStart.Enabled, TimeSpan.FromSeconds(5));
+        if (unitGrid.ReadOnly
+            || !GetField<Button>(form, "_slaveAddUnitButton").Enabled
+            || !GetField<Button>(form, "_slaveDeleteUnitButton").Enabled
+            || !slaveUnitsGroup.Text.Contains("已停止时可编辑", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("从站停止后初始数据表及新增/删除单元操作应恢复可用并显示状态。");
+        }
+
+        unitGrid.Rows[0].Cells[1].Value = "40001 = 100";
+        unitGrid.EndEdit();
         slaveStart.PerformClick();
         PumpUntil(() => slaveState.Text.Contains("监听", StringComparison.Ordinal), TimeSpan.FromSeconds(5));
+        if (!unitGrid.ReadOnly)
+        {
+            throw new InvalidOperationException("从站重新启动后初始数据表没有重新锁定。");
+        }
+
         read.PerformClick();
         if (!result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
                 StringSplitOptions.None)[0].Contains("100 (0x0064)", StringComparison.Ordinal))
