@@ -33,15 +33,19 @@ internal sealed class ExceptionInjectionFunctionService : IModbusFunctionService
         IModbusMessage request,
         ISlaveDataStore dataStore)
     {
-        ushort requestAddress = ExtractStartAddress(request.MessageFrame);
+        (ushort requestAddress, ushort requestCount) = ExtractRequestRange(
+            request.MessageFrame,
+            FunctionCode);
         ExceptionInjectionRule? rule = _ruleProvider.Find(
             request.SlaveAddress,
             FunctionCode,
-            requestAddress);
+            requestAddress,
+            requestCount);
         if (rule is not null)
         {
             throw new InvalidModbusRequestException(
-                $"已命中地址 {requestAddress} 的异常注入规则。",
+                $"请求地址范围 {requestAddress}-{requestAddress + requestCount - 1} "
+                + $"命中异常注入规则 {rule.StartAddress}-{rule.StartAddress + rule.Count - 1}。",
                 rule.ExceptionCode);
         }
 
@@ -58,14 +62,21 @@ internal sealed class ExceptionInjectionFunctionService : IModbusFunctionService
         return _inner.GetRtuResponseBytesToRead(frameStart);
     }
 
-    private static ushort ExtractStartAddress(byte[] messageFrame)
+    private static (ushort Address, ushort Count) ExtractRequestRange(
+        byte[] messageFrame,
+        byte functionCode)
     {
         if (messageFrame.Length < 4)
         {
-            return 0;
+            return (0, 1);
         }
 
-        return (ushort)((messageFrame[2] << 8) | messageFrame[3]);
+        ushort address = (ushort)((messageFrame[2] << 8) | messageFrame[3]);
+        bool hasQuantity = functionCode is 0x01 or 0x02 or 0x03 or 0x04 or 0x0F or 0x10;
+        ushort count = hasQuantity && messageFrame.Length >= 6
+            ? (ushort)((messageFrame[4] << 8) | messageFrame[5])
+            : (ushort)1;
+        return (address, Math.Max(count, (ushort)1));
     }
 }
 
@@ -88,15 +99,19 @@ internal sealed class ExceptionRuleProvider
         }
     }
 
-    public ExceptionInjectionRule? Find(byte unitId, byte functionCode, ushort address)
+    public ExceptionInjectionRule? Find(
+        byte unitId,
+        byte functionCode,
+        ushort requestAddress,
+        ushort requestCount)
     {
         lock (_syncRoot)
         {
             return _rules.FirstOrDefault(rule =>
                 rule.UnitId == unitId
                 && (byte)rule.Function == functionCode
-                && address >= rule.StartAddress
-                && address < rule.StartAddress + Math.Max(rule.Count, (ushort)1));
+                && requestAddress < rule.StartAddress + (int)rule.Count
+                && rule.StartAddress < requestAddress + (int)requestCount);
         }
     }
 

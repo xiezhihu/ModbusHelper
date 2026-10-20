@@ -188,7 +188,9 @@ public sealed partial class MainForm : Form
         SetToolTip(_connectionTypeCombo, "选择主站传输方式：RTU 使用串口，TCP 使用网络连接。");
         SetToolTip(_serialPortCombo, "主站使用的串口。虚拟串口自环时可选择 COM1 或 COM2。");
         SetToolTip(_baudRateInput, "RTU 波特率，必须与从站保持一致。");
-        SetToolTip(_dataBitsInput, "RTU 数据位，常用配置为 8。");
+        SetToolTip(
+            _dataBitsInput,
+            "RTU 数据位。Modbus RTU 通常使用 8；主站、从站和设备必须完全一致，否则可能出现 CRC 错误或数据截断。");
         SetToolTip(_parityCombo, "RTU 校验方式，必须与从站保持一致。");
         SetToolTip(_stopBitsCombo, "RTU 停止位，必须与从站保持一致。");
         SetToolTip(_tcpHostInput, "TCP 从站的 IP 地址或主机名。");
@@ -227,20 +229,22 @@ public sealed partial class MainForm : Form
         SetToolTip(_slaveTypeCombo, "选择 RTU 串口从站或 TCP 网络从站。");
         SetToolTip(_slaveSerialPortCombo, "从站监听使用的串口，不能与同一时间占用该串口的主站重复。");
         SetToolTip(_slaveBaudRateInput, "RTU 从站波特率，必须与主站一致。");
-        SetToolTip(_slaveDataBitsInput, "RTU 从站数据位，必须与主站一致。");
+        SetToolTip(
+            _slaveDataBitsInput,
+            "RTU 从站数据位，通常为 8；必须与主站和真实设备完全一致，否则可能出现 CRC 错误或数据截断。");
         SetToolTip(_slaveParityCombo, "RTU 从站校验方式，必须与主站一致。");
         SetToolTip(_slaveStopBitsCombo, "RTU 从站停止位，必须与主站一致。");
         SetToolTip(_slaveListenAddressInput, "TCP 从站绑定地址，0.0.0.0 表示监听本机所有网卡。");
         SetToolTip(_slaveListenPortInput, "TCP 从站监听端口，主站连接时使用相同端口。");
-        SetToolTip(_slaveUnitGrid, "每个 UnitID 拥有独立的线圈、离散输入、保持寄存器和输入寄存器。");
-        SetToolTip(_slaveRuleGrid, "可按从站、功能码和地址范围注入指定 Modbus 异常码，用于联调异常处理。");
-        SetToolTip(_slaveManualUnitInput, "要修改的模拟从站 UnitID。");
-        SetToolTip(_slaveManualAreaCombo, "选择要读取或写入的模拟数据区。");
-        SetToolTip(_slaveManualAddressInput, "模拟数据区的起始地址，使用 0 基协议地址。");
-        SetToolTip(_slaveManualCountInput, "要读取或写入的元素数量。");
-        SetToolTip(_slaveManualValuesInput, "输入模拟值，多个值用逗号、分号或空格分隔。");
+        SetToolTip(_slaveUnitGrid, "每一行是一个从站 UnitID，直接编辑该列设置地址；各存储区拥有独立地址空间，单元格按“地址→值”显示。");
+        SetToolTip(_slaveRuleGrid, "按 UnitID、功能码和地址范围匹配请求；“地址范围数量”是从起始地址开始连续覆盖的地址数，请求范围与之重叠即返回指定异常码。");
+        SetToolTip(_slaveManualUnitInput, "要修改的模拟从站 UnitID；必须先在上方单元表中配置该地址，新增单元时会自动选中新单元。");
+        SetToolTip(_slaveManualAreaCombo, "选择独立的数据区：同一个数字地址在保持寄存器、输入寄存器、线圈、离散输入中分别存储，互不相同。");
+        SetToolTip(_slaveManualAddressInput, "模拟数据区的起始地址，遵循主界面当前地址基准；1 基时保持寄存器示例为 40001、输入寄存器为 30001。");
+        SetToolTip(_slaveManualCountInput, "要读取或写入的连续元素数量；寄存器是 ushort，线圈和离散输入是 0/1。");
+        SetToolTip(_slaveManualValuesInput, "输入要写入的模拟值，多个值用逗号、分号或空格分隔；寄存器可写十进制或 0x 十六进制，线圈使用 0/1 或 ON/OFF。");
         SetToolTip(_slaveManualResultBox, "最近一次从站模拟数据读写结果。");
-        SetToolTip(_slaveFrameBox, "从站收到的请求和发出的响应报文，带毫秒时间戳。");
+        SetToolTip(_slaveFrameBox, "按时间倒序显示最近 200 条从站请求/响应，格式为完整时间戳、方向、原始十六进制报文和解析含义。");
 
         SetToolTip(_trendWindowCombo, "只显示最近 1 分钟、5 分钟或 30 分钟的趋势数据。");
         SetToolTip(_trendPauseCheck, "暂停图表刷新；后台轮询和环形缓冲区仍可继续采样。");

@@ -47,6 +47,7 @@ public sealed partial class MainForm
     private readonly TextBox _slaveManualValuesInput = UiHelpers.CreateTextBox();
     private readonly TextBox _slaveManualResultBox = CreateResultTextBox();
     private readonly TextBox _slaveFrameBox = CreateResultTextBox();
+    private SlaveArea _slaveManualCurrentArea = SlaveArea.HoldingRegisters;
     private TableLayoutPanel? _slaveRootLayout;
     private GroupBox? _slaveEndpointGroup;
     private long _lastSlaveFrameRevision = -1;
@@ -87,7 +88,7 @@ public sealed partial class MainForm
         };
         UiHelpers.SetInitialSplitterLayout(manualSplit, 720, 420, 360);
         manualSplit.Panel1.Controls.Add(CreateSlaveManualGroup());
-        GroupBox frameGroup = UiHelpers.CreateGroup("从站收发报文");
+        GroupBox frameGroup = UiHelpers.CreateGroup("从站报文历史（最近 200 条）");
         frameGroup.Controls.Add(_slaveFrameBox);
         manualSplit.Panel2.Controls.Add(frameGroup);
         root.Controls.Add(manualSplit, 0, 2);
@@ -130,6 +131,7 @@ public sealed partial class MainForm
             });
 
         _slaveTypeCombo.SelectedIndexChanged += (_, _) => UpdateSlaveTypeVisibility();
+        _slaveManualAreaCombo.SelectedIndexChanged += OnSlaveManualAreaChanged;
         _slaveStartButton.Click += async (_, _) => await StartSlaveAsync();
         _slaveStopButton.Click += async (_, _) => await _services.SlaveSimulationManager.StopAsync();
         UpdateSlaveTypeVisibility();
@@ -239,7 +241,8 @@ public sealed partial class MainForm
 
     private GroupBox CreateSlaveUnitsGroup()
     {
-        GroupBox group = UiHelpers.CreateGroup("从站单元与初始值（显示地址=值）");
+        GroupBox group = UiHelpers.CreateGroup(
+            "从站单元（UnitID）与各存储区初始值（格式：地址→值）");
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
@@ -274,9 +277,10 @@ public sealed partial class MainForm
         _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             DataPropertyName = nameof(SlaveUnitEditor.UnitId),
-            HeaderText = "从站地址",
+            HeaderText = "UnitID（地址）",
             Width = UiHelpers.Scale(_slaveUnitGrid, 92),
-            MinimumWidth = UiHelpers.Scale(_slaveUnitGrid, 88)
+            MinimumWidth = UiHelpers.Scale(_slaveUnitGrid, 112),
+            ValueType = typeof(byte)
         });
         _slaveUnitGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -306,7 +310,7 @@ public sealed partial class MainForm
 
     private GroupBox CreateSlaveRulesGroup()
     {
-        GroupBox group = UiHelpers.CreateGroup("异常注入规则");
+        GroupBox group = UiHelpers.CreateGroup("异常注入规则（请求范围命中时返回指定异常）");
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
@@ -385,9 +389,9 @@ public sealed partial class MainForm
         _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             DataPropertyName = nameof(ExceptionRuleEditor.Count),
-            HeaderText = "数量",
-            Width = UiHelpers.Scale(_slaveRuleGrid, 58),
-            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 54),
+            HeaderText = "地址范围数量",
+            Width = UiHelpers.Scale(_slaveRuleGrid, 92),
+            MinimumWidth = UiHelpers.Scale(_slaveRuleGrid, 84),
             ValueType = typeof(ushort)
         });
         _slaveRuleGrid.Columns.Add(new DataGridViewTextBoxColumn
@@ -419,14 +423,14 @@ public sealed partial class MainForm
             RowCount = 3,
             Padding = new Padding(4)
         };
-        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 84F));
+        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiHelpers.Scale(fields, 108)));
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56F));
+        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, UiHelpers.Scale(fields, 78)));
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
         fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
         fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
         fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
-        fields.Controls.Add(UiHelpers.CreateLabel("从站地址"), 0, 0);
+        fields.Controls.Add(UiHelpers.CreateLabel("UnitID"), 0, 0);
         fields.Controls.Add(_slaveManualUnitInput, 1, 0);
         fields.Controls.Add(UiHelpers.CreateLabel("存储区域"), 2, 0);
         fields.Controls.Add(_slaveManualAreaCombo, 3, 0);
@@ -487,6 +491,14 @@ public sealed partial class MainForm
 
         _slaveUnitEditors.RaiseListChangedEvents = true;
         _slaveUnitEditors.ResetBindings();
+        _slaveManualUnitInput.Value = _slaveUnitEditors.Count == 0
+            ? 1
+            : _slaveUnitEditors[0].UnitId;
+        _slaveManualCurrentArea = SlaveArea.HoldingRegisters;
+        _slaveManualAddressInput.Value = ModbusAddressConverter.ToDisplayAddress(
+            0,
+            _configuration.AddressBase,
+            ModbusFunction.ReadHoldingRegisters);
 
         _slaveRuleEditors.RaiseListChangedEvents = false;
         _slaveRuleEditors.Clear();
@@ -643,17 +655,41 @@ public sealed partial class MainForm
 
     private void AddSlaveUnit()
     {
-        byte nextId = (byte)Math.Min(
-            247,
-            _slaveUnitEditors.Count == 0
-                ? 1
-                : _slaveUnitEditors.Max(editor => editor.UnitId) + 1);
+        HashSet<byte> configuredIds = _slaveUnitEditors
+            .Select(editor => editor.UnitId)
+            .ToHashSet();
+        byte nextId = Enumerable.Range(1, 247)
+            .Select(value => (byte)value)
+            .FirstOrDefault(unitId => !configuredIds.Contains(unitId));
+        if (nextId == 0)
+        {
+            MessageBox.Show(
+                this,
+                "最多配置 247 个标准从站单元。",
+                "无法新增从站单元",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        AddressBase addressBase = UiHelpers.GetSelectedValue(
+            _addressBaseCombo,
+            AddressBase.ZeroBased);
+        int registerAddress = ModbusAddressConverter.ToDisplayAddress(
+            0,
+            addressBase,
+            ModbusFunction.ReadHoldingRegisters);
+        int coilAddress = ModbusAddressConverter.ToDisplayAddress(
+            0,
+            addressBase,
+            ModbusFunction.ReadCoils);
         _slaveUnitEditors.Add(new SlaveUnitEditor
         {
             UnitId = nextId,
-            HoldingRegisters = "0=0",
-            Coils = "0=0"
+            HoldingRegisters = $"{registerAddress}=0",
+            Coils = $"{coilAddress}=0"
         });
+        _slaveManualUnitInput.Value = nextId;
     }
 
     private void DeleteSlaveUnit()
@@ -661,6 +697,9 @@ public sealed partial class MainForm
         if (_slaveUnitGrid.CurrentRow?.DataBoundItem is SlaveUnitEditor editor)
         {
             _slaveUnitEditors.Remove(editor);
+            _slaveManualUnitInput.Value = _slaveUnitEditors.Count == 0
+                ? 1
+                : _slaveUnitEditors[0].UnitId;
         }
     }
 
@@ -697,10 +736,46 @@ public sealed partial class MainForm
         _statusConnectionLabel.ForeColor = Color.DarkGreen;
     }
 
+    private void OnSlaveManualAreaChanged(object? sender, EventArgs e)
+    {
+        SlaveArea nextArea = UiHelpers.GetSelectedValue(
+            _slaveManualAreaCombo,
+            _slaveManualCurrentArea);
+        if (nextArea == _slaveManualCurrentArea)
+        {
+            return;
+        }
+
+        AddressBase addressBase = UiHelpers.GetSelectedValue(
+            _addressBaseCombo,
+            AddressBase.ZeroBased);
+        ModbusFunction previousFunction = AreaToFunction(_slaveManualCurrentArea);
+        ModbusFunction nextFunction = AreaToFunction(nextArea);
+        ushort protocolAddress;
+        try
+        {
+            protocolAddress = ModbusAddressConverter.ToProtocolAddress(
+                (int)_slaveManualAddressInput.Value,
+                addressBase,
+                previousFunction);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            protocolAddress = 0;
+        }
+
+        _slaveManualAddressInput.Value = ModbusAddressConverter.ToDisplayAddress(
+            protocolAddress,
+            addressBase,
+            nextFunction);
+        _slaveManualCurrentArea = nextArea;
+    }
+
     private void WriteSlaveManualValues()
     {
         try
         {
+            byte unitId = GetConfiguredManualUnitId();
             SlaveArea area = UiHelpers.GetSelectedValue(
                 _slaveManualAreaCombo,
                 SlaveArea.HoldingRegisters);
@@ -713,7 +788,7 @@ public sealed partial class MainForm
             {
                 bool[] values = ParseCoils(_slaveManualValuesInput.Text);
                 _services.SlaveSimulationManager.WriteValues(
-                    (byte)_slaveManualUnitInput.Value,
+                    unitId,
                     area,
                     address,
                     values);
@@ -723,7 +798,7 @@ public sealed partial class MainForm
             {
                 ushort[] values = ParseRegisters(_slaveManualValuesInput.Text);
                 _services.SlaveSimulationManager.WriteValues(
-                    (byte)_slaveManualUnitInput.Value,
+                    unitId,
                     area,
                     address,
                     values);
@@ -731,6 +806,16 @@ public sealed partial class MainForm
             }
 
             ReadSlaveManualValues();
+        }
+        catch (ArgumentOutOfRangeException exception)
+            when (exception.ParamName == "inputAddress")
+        {
+            MessageBox.Show(
+                this,
+                GetSlaveAddressInputError(),
+                "模拟地址错误",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
         }
         catch (Exception exception)
         {
@@ -743,10 +828,23 @@ public sealed partial class MainForm
         }
     }
 
+    private byte GetConfiguredManualUnitId()
+    {
+        byte unitId = checked((byte)_slaveManualUnitInput.Value);
+        if (!_slaveUnitEditors.Any(editor => editor.UnitId == unitId))
+        {
+            throw new InvalidOperationException(
+                $"单元表中没有配置 UnitID {unitId}。请先新增或选择已配置的从站单元。");
+        }
+
+        return unitId;
+    }
+
     private void ReadSlaveManualValues()
     {
         try
         {
+            byte unitId = GetConfiguredManualUnitId();
             SlaveArea area = UiHelpers.GetSelectedValue(
                 _slaveManualAreaCombo,
                 SlaveArea.HoldingRegisters);
@@ -757,7 +855,7 @@ public sealed partial class MainForm
                 function);
             ushort count = checked((ushort)_slaveManualCountInput.Value);
             object values = _services.SlaveSimulationManager.ReadValues(
-                (byte)_slaveManualUnitInput.Value,
+                unitId,
                 area,
                 address,
                 count);
@@ -765,17 +863,52 @@ public sealed partial class MainForm
             {
                 ushort[] registers => string.Join(
                     ", ",
-                    registers.Select(value => $"0x{value:X4}")),
-                bool[] coils => string.Join(", ", coils.Select(value => value ? "1" : "0")),
+                    registers.Select(value => $"{value} (0x{value:X4})")),
+                bool[] coils => string.Join(
+                    ", ",
+                    coils.Select(value => value ? "ON (1)" : "OFF (0)")),
                 _ => values.ToString() ?? string.Empty
             };
             _slaveManualResultBox.Text =
-                $"区域：{area}{Environment.NewLine}地址：{_slaveManualAddressInput.Value}{Environment.NewLine}值：{formatted}";
+                $"UnitID：{_slaveManualUnitInput.Value}    区域：{GetSlaveAreaText(area)}"
+                + $"{Environment.NewLine}显示地址：{_slaveManualAddressInput.Value}"
+                + $"{Environment.NewLine}协议地址：{address}"
+                + $"{Environment.NewLine}值：{formatted}";
+        }
+        catch (ArgumentOutOfRangeException exception)
+            when (exception.ParamName == "inputAddress")
+        {
+            _slaveManualResultBox.Text = GetSlaveAddressInputError();
         }
         catch (Exception exception)
         {
             _slaveManualResultBox.Text = exception.Message;
         }
+    }
+
+    private string GetSlaveAddressInputError()
+    {
+        AddressBase addressBase = UiHelpers.GetSelectedValue(
+            _addressBaseCombo,
+            AddressBase.ZeroBased);
+        if (addressBase != AddressBase.OneBased)
+        {
+            return "协议地址必须在 0 至 65535 范围内。";
+        }
+
+        return "地址不能按当前 1 基规则换算。请使用对应手册地址，例如保持寄存器 40001、"
+               + "输入寄存器 30001、线圈 1、离散输入 10001。";
+    }
+
+    private static string GetSlaveAreaText(SlaveArea area)
+    {
+        return area switch
+        {
+            SlaveArea.Coils => "线圈",
+            SlaveArea.DiscreteInputs => "离散输入",
+            SlaveArea.InputRegisters => "输入寄存器",
+            _ => "保持寄存器"
+        };
     }
 
     private static ModbusFunction AreaToFunction(SlaveArea area)
@@ -812,8 +945,20 @@ public sealed partial class MainForm
             Environment.NewLine,
             records.Where(record => record.Role == ModbusRole.Slave)
                 .Take(200)
-                .Select(record =>
-                    $"{record.Timestamp:HH:mm:ss.fff} {record.Direction,-2} {record.Hex} | {record.Meaning}"));
+                .Select(FormatSlaveFrameHistoryLine));
+        if (string.IsNullOrWhiteSpace(_slaveFrameBox.Text))
+        {
+            _slaveFrameBox.Text = "暂无从站报文记录。";
+        }
+    }
+
+    private static string FormatSlaveFrameHistoryLine(ModbusLogRecord record)
+    {
+        string direction = record.Direction == DataDirection.Rx
+            ? "接收请求"
+            : "发送响应";
+        return $"{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff} : {direction} | "
+               + $"{record.Hex} | {record.Meaning}";
     }
 
     private void ShowSlaveError(string message)
@@ -1037,14 +1182,13 @@ public sealed partial class MainForm
                      SlaveMapEntrySeparators,
                      StringSplitOptions.RemoveEmptyEntries))
         {
-            string[] pair = entry.Split('=', 2, StringSplitOptions.TrimEntries);
-            if (pair.Length != 2
-                || !int.TryParse(pair[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int display)
+            if (!TrySplitAddressValue(entry, out string addressText, out string valueText)
+                || !int.TryParse(addressText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int display)
                 || !ushort.TryParse(
-                    pair[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                        ? pair[1][2..]
-                        : pair[1],
-                    pair[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                    valueText.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? valueText[2..]
+                        : valueText,
+                    valueText.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
                         ? NumberStyles.HexNumber
                         : NumberStyles.Integer,
                     CultureInfo.InvariantCulture,
@@ -1078,16 +1222,18 @@ public sealed partial class MainForm
                      SlaveMapEntrySeparators,
                      StringSplitOptions.RemoveEmptyEntries))
         {
-            string[] pair = entry.Split('=', 2, StringSplitOptions.TrimEntries);
-            if (pair.Length != 2
-                || !int.TryParse(pair[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int display)
-                || pair[1] is not ("0" or "1" or "true" or "false" or "ON" or "OFF"
-                    or "on" or "off"))
+            if (!TrySplitAddressValue(entry, out string addressText, out string valueText)
+                || !int.TryParse(addressText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int display))
             {
                 throw new ArgumentException($"无法解析线圈初始值“{entry}”。");
             }
 
-            bool value = pair[1] is "1" or "true" or "ON" or "on";
+            bool value = valueText.ToUpperInvariant() switch
+            {
+                "1" or "TRUE" or "ON" or "ON (1)" => true,
+                "0" or "FALSE" or "OFF" or "OFF (0)" => false,
+                _ => throw new ArgumentException($"无法解析线圈初始值“{entry}”。")
+            };
             result.Add(new CoilInitialValue
             {
                 Address = ModbusAddressConverter.ToProtocolAddress(display, addressBase, function),
@@ -1098,6 +1244,40 @@ public sealed partial class MainForm
         return result;
     }
 
+    private static bool TrySplitAddressValue(
+        string entry,
+        out string addressText,
+        out string valueText)
+    {
+        int separatorIndex = entry.IndexOf('→');
+        int separatorLength = 1;
+        if (separatorIndex < 0)
+        {
+            separatorIndex = entry.IndexOf('=');
+        }
+
+        if (separatorIndex < 0)
+        {
+            addressText = string.Empty;
+            valueText = string.Empty;
+            return false;
+        }
+
+        addressText = entry[..separatorIndex].Trim();
+        valueText = entry[(separatorIndex + separatorLength)..].Trim();
+        if (addressText.StartsWith("地址 ", StringComparison.Ordinal))
+        {
+            addressText = addressText["地址 ".Length..].Trim();
+        }
+
+        if (valueText.StartsWith("值 ", StringComparison.Ordinal))
+        {
+            valueText = valueText["值 ".Length..].Trim();
+        }
+
+        return addressText.Length > 0 && valueText.Length > 0;
+    }
+
     private static string FormatRegisterMap(
         IEnumerable<RegisterInitialValue> values,
         AddressBase addressBase,
@@ -1106,7 +1286,8 @@ public sealed partial class MainForm
         return string.Join(
             ", ",
             values.Select(value =>
-                $"{ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}={value.Value}"));
+                $"地址 {ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}"
+                + $" → 值 {value.Value}"));
     }
 
     private static string FormatCoilMap(
@@ -1117,6 +1298,7 @@ public sealed partial class MainForm
         return string.Join(
             ", ",
             values.Select(value =>
-                $"{ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}={(value.Value ? 1 : 0)}"));
+                $"地址 {ModbusAddressConverter.ToDisplayAddress(value.Address, addressBase, function)}"
+                + $" → {(value.Value ? "ON (1)" : "OFF (0)")}"));
     }
 }

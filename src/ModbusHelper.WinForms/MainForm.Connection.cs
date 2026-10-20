@@ -521,6 +521,11 @@ public sealed partial class MainForm
                 return;
             }
 
+            if (validation.HasWarnings)
+            {
+                ShowWarnings(validation.Warnings);
+            }
+
             _connectButton.Enabled = false;
             await _services.ConnectionManager.ConnectAsync(_configuration.Connection);
             if (validation.HasWarnings)
@@ -730,18 +735,26 @@ public sealed partial class MainForm
             ModbusFunction slaveFunction = AreaToFunction(UiHelpers.GetSelectedValue(
                 _slaveManualAreaCombo,
                 SlaveArea.HoldingRegisters));
-            ushort? slaveProtocol = null;
+            ushort slaveProtocol = 0;
             try
             {
                 slaveProtocol = ModbusAddressConverter.ToProtocolAddress(
                     (int)_slaveManualAddressInput.Value,
                     previousBase,
                     slaveFunction);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // 无效显示地址回到所选存储区的首地址。
+            }
+
+            try
+            {
                 ConvertSlaveEditorAddresses(previousBase, next);
             }
             catch (ArgumentException)
             {
-                // 从站初始值文本尚不完整时，仅切换主站地址基准。
+                // 从站初始值文本尚不完整时，仅保留原始文本。
             }
 
             _currentAddressBase = next;
@@ -750,13 +763,10 @@ public sealed partial class MainForm
                 protocol,
                 next,
                 function);
-            if (slaveProtocol.HasValue)
-            {
-                _slaveManualAddressInput.Value = ModbusAddressConverter.ToDisplayAddress(
-                    slaveProtocol.Value,
-                    next,
-                    slaveFunction);
-            }
+            _slaveManualAddressInput.Value = ModbusAddressConverter.ToDisplayAddress(
+                slaveProtocol,
+                next,
+                slaveFunction);
             UpdatePollingAddressDisplays();
         }
         catch (ArgumentOutOfRangeException)

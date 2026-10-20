@@ -185,6 +185,12 @@ public static class ConnectionParameterValidator
         {
             result.AddError("数据位必须为 5 至 8。");
         }
+        else if (rtu.DataBits != 8)
+        {
+            result.AddWarning(
+                "Modbus RTU 通常使用 8 个数据位；主站、从站和真实设备的数据位必须完全一致，"
+                + "否则可能出现 CRC 错误或数据被截断。");
+        }
 
         if (rtu.StopBits == SerialStopBits.OnePointFive && rtu.DataBits != 5)
         {

@@ -498,6 +498,9 @@ public sealed class ModbusService : IDisposable
 
         await Task.Run(serialPort.Open, cancellationToken).ConfigureAwait(false);
         _serialPort = serialPort;
+        // RTU 从站不会主动上报；清除连接前残留收发字节，避免旧帧被误当成当前响应。
+        serialPort.DiscardInBuffer();
+        serialPort.DiscardOutBuffer();
         _master = _factory!.CreateRtuMaster(serialPort);
     }
 
@@ -574,6 +577,7 @@ public sealed class ModbusService : IDisposable
         Stopwatch stopwatch = Stopwatch.StartNew();
         try
         {
+            DiscardStaleRtuInput();
             IModbusMaster master = _master!;
             Task<T> invocationTask = Task.Run(
                 () =>
@@ -661,6 +665,21 @@ public sealed class ModbusService : IDisposable
             _activeFrames = null;
             _operationLock.Release();
         }
+    }
+
+    /// <summary>
+    /// 在独占串口操作开始前清理上一轮异常退出或虚拟串口残留的响应字节。
+    /// RTU 报文没有事务序号，旧响应与新请求结构相同且校验正确时无法在业务层区分；
+    /// 清理动作必须位于串行锁内，避免与 NModbus 传输层并发访问同一个 SerialPort。
+    /// </summary>
+    private void DiscardStaleRtuInput()
+    {
+        if (_configuration.Type != ConnectionType.Rtu || _serialPort is null || !_serialPort.IsOpen)
+        {
+            return;
+        }
+
+        _serialPort.DiscardInBuffer();
     }
 
     private static void ValidateRead(

@@ -503,13 +503,13 @@ static async Task TestTcpSelfLoop()
         UnitId = 1,
         Function = ModbusFunction.ReadHoldingRegisters,
         StartAddress = 50,
-        Count = 1,
+        Count = 3,
         ExceptionCode = 2
     });
     simulator.UpdateExceptionRules(slaveConfiguration.Units[0].ExceptionRules);
     try
     {
-        await service.ReadHoldingRegistersAsync(1, 50, 1);
+        await service.ReadHoldingRegistersAsync(1, 49, 2);
         throw new InvalidOperationException("异常注入规则未生效。");
     }
     catch (ModbusCommunicationException exception)
@@ -841,13 +841,13 @@ static async Task TestRtuSelfLoop(string masterPortName, string slavePortName)
         UnitId = 1,
         Function = ModbusFunction.ReadHoldingRegisters,
         StartAddress = 50,
-        Count = 1,
+        Count = 3,
         ExceptionCode = 2
     });
     simulator.UpdateExceptionRules(slaveConfiguration.Units[0].ExceptionRules);
     try
     {
-        await service.ReadHoldingRegistersAsync(1, 50, 1);
+        await service.ReadHoldingRegistersAsync(1, 49, 2);
         throw new InvalidOperationException("RTU 异常注入规则未生效。");
     }
     catch (ModbusCommunicationException exception)

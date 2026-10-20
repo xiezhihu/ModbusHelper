@@ -305,6 +305,9 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
         };
         serialPort.Open();
         _serialPort = serialPort;
+        // 从站启动前清除虚拟串口或设备缓冲中的残留收发字节。
+        serialPort.DiscardInBuffer();
+        serialPort.DiscardOutBuffer();
         _network = _factory!.CreateRtuSlaveNetwork(serialPort);
     }
 

@@ -112,10 +112,15 @@ internal static class Program
             SelectComboPort(
                 GetField<ComboBox>(form, "_slaveSerialPortCombo"),
                 slavePortName);
+            GetField<NumericUpDown>(form, "_slaveBaudRateInput").Value = 9600;
+            GetField<NumericUpDown>(form, "_slaveDataBitsInput").Value = 8;
+            SelectComboByText(GetField<ComboBox>(form, "_slaveParityCombo"), "无校验");
+            SelectComboByText(GetField<ComboBox>(form, "_slaveStopBitsCombo"), "1");
         }
         else
         {
             port = GetFreeTcpPort();
+            SelectComboByText(GetField<ComboBox>(form, "_slaveTypeCombo"), "TCP");
             GetField<NumericUpDown>(form, "_slaveListenPortInput").Value = port;
         }
 
@@ -126,6 +131,69 @@ internal static class Program
             throw new InvalidOperationException($"从站未进入监听状态：{slaveState.Text}");
         }
 
+        DataGridView unitGrid = GetField<DataGridView>(form, "_slaveUnitGrid");
+        NumericUpDown manualSlaveUnit = GetField<NumericUpDown>(form, "_slaveManualUnitInput");
+        if (unitGrid.Rows.Count == 0
+            || manualSlaveUnit.Value != (byte)unitGrid.Rows[0].Cells[0].Value!)
+        {
+            throw new InvalidOperationException("手动模拟默认 UnitID 未与已配置的首个从站单元同步。");
+        }
+
+        if (unitGrid.ReadOnly || unitGrid.Columns[0].ReadOnly)
+        {
+            throw new InvalidOperationException("从站单元表的 UnitID 地址列不可编辑。");
+        }
+
+        // UI 冒烟测试使用独立的初始值，避免迁移到临时数据库的旧配置影响 RTU 自环。
+        ComboBox smokeAddressBaseCombo = GetField<ComboBox>(form, "_addressBaseCombo");
+        int smokeHoldingAddress = smokeAddressBaseCombo.Text.Contains(
+            "1 基",
+            StringComparison.Ordinal)
+            ? 40001
+            : 0;
+        unitGrid.Rows[0].Cells[1].Value = $"{smokeHoldingAddress}=0";
+        unitGrid.EndEdit();
+
+        SelectComboByText(GetField<ComboBox>(form, "_addressBaseCombo"), "1 基");
+        NumericUpDown manualSlaveAddress = GetField<NumericUpDown>(form, "_slaveManualAddressInput");
+        if (manualSlaveAddress.Value != 40001)
+        {
+            throw new InvalidOperationException(
+                $"1 基模式下保持寄存器地址应显示 40001，实际为 {manualSlaveAddress.Value}。");
+        }
+
+        ComboBox manualArea = GetField<ComboBox>(form, "_slaveManualAreaCombo");
+        SelectComboByText(manualArea, "输入寄存器");
+        if (manualSlaveAddress.Value != 30001)
+        {
+            throw new InvalidOperationException("切换输入寄存器后未转换为 30001 风格地址。");
+        }
+
+        SelectComboByText(manualArea, "线圈");
+        if (manualSlaveAddress.Value != 1)
+        {
+            throw new InvalidOperationException("切换线圈后未转换为 1 基线圈地址。");
+        }
+
+        SelectComboByText(manualArea, "离散输入");
+        if (manualSlaveAddress.Value != 10001)
+        {
+            throw new InvalidOperationException("切换离散输入后未转换为 10001 风格地址。");
+        }
+
+        SelectComboByText(manualArea, "保持寄存器");
+        GetField<NumericUpDown>(form, "_manualUnitInput").Value = manualSlaveUnit.Value;
+        GetField<TextBox>(form, "_slaveManualValuesInput").Text = "42";
+        (FindButton(form, "写入模拟数据")
+            ?? throw new InvalidOperationException("未找到写入模拟数据按钮。")).PerformClick();
+        string manualSlaveResult = GetField<TextBox>(form, "_slaveManualResultBox").Text;
+        if (!manualSlaveResult.Contains("协议地址：0", StringComparison.Ordinal)
+            || !manualSlaveResult.Contains("0x002A", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"从站手动模拟未写入 1 基地址 40001 对应的协议地址 0：{manualSlaveResult}");
+        }
+
         Button connect = GetField<Button>(form, "_connectButton");
         Label headerStatus = GetField<Label>(form, "_headerStatusLabel");
         tabs.SelectedIndex = 0;
@@ -133,9 +201,14 @@ internal static class Program
         {
             SelectComboByText(GetField<ComboBox>(form, "_connectionTypeCombo"), "RTU");
             SelectComboPort(GetField<ComboBox>(form, "_serialPortCombo"), masterPortName);
+            GetField<NumericUpDown>(form, "_baudRateInput").Value = 9600;
+            GetField<NumericUpDown>(form, "_dataBitsInput").Value = 8;
+            SelectComboByText(GetField<ComboBox>(form, "_parityCombo"), "无校验");
+            SelectComboByText(GetField<ComboBox>(form, "_stopBitsCombo"), "1");
         }
         else
         {
+            SelectComboByText(GetField<ComboBox>(form, "_connectionTypeCombo"), "TCP");
             GetField<NumericUpDown>(form, "_tcpPortInput").Value = port;
         }
 
@@ -144,6 +217,41 @@ internal static class Program
         if (headerStatus.Text != "已连接")
         {
             throw new InvalidOperationException($"主站未连接：{headerStatus.Text}");
+        }
+
+        Button execute = GetField<Button>(form, "_executeManualButton");
+        TextBox request = GetField<TextBox>(form, "_requestHexBox");
+        TextBox response = GetField<TextBox>(form, "_responseHexBox");
+        TextBox parsedValues = GetField<TextBox>(form, "_parsedValueBox");
+        execute.PerformClick();
+        PumpUntil(
+            () => !string.IsNullOrWhiteSpace(parsedValues.Text),
+            TimeSpan.FromSeconds(3));
+        if (string.IsNullOrWhiteSpace(request.Text) || string.IsNullOrWhiteSpace(response.Text))
+        {
+            throw new InvalidOperationException("界面手动读取未收到完整请求和响应报文。");
+        }
+
+        if (!parsedValues.Text.Contains("0x002A", StringComparison.Ordinal))
+        {
+            tabs.SelectedIndex = 2;
+            Pump(TimeSpan.FromMilliseconds(250));
+            string failedReadFrames = GetField<TextBox>(form, "_slaveFrameBox").Text;
+            throw new InvalidOperationException(
+                $"主站没有读取到从站手动修改的值 42：{parsedValues.Text}"
+                + $"{Environment.NewLine}请求历史：{request.Text}"
+                + $"{Environment.NewLine}响应历史：{response.Text}"
+                + $"{Environment.NewLine}从站历史：{failedReadFrames}");
+        }
+
+        if (!request.Text.Contains(" : ", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("请求历史未按“时间戳：十六进制报文”格式显示。");
+        }
+
+        if (!response.Text.Contains(" : ", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("响应历史未按“时间戳：十六进制报文”格式显示。");
         }
 
         BindingList<PollingTaskConfiguration> tasks = GetField<
@@ -218,24 +326,9 @@ internal static class Program
         Pump(TimeSpan.FromMilliseconds(useRtu ? 1200 : 700));
 
         tabs.SelectedIndex = 0;
-        Button execute = GetField<Button>(form, "_executeManualButton");
-        TextBox request = GetField<TextBox>(form, "_requestHexBox");
-        TextBox response = GetField<TextBox>(form, "_responseHexBox");
-        execute.PerformClick();
-        Pump(TimeSpan.FromMilliseconds(800));
         if (string.IsNullOrWhiteSpace(request.Text) || string.IsNullOrWhiteSpace(response.Text))
         {
-            throw new InvalidOperationException("界面手动读取未收到完整请求和响应报文。");
-        }
-
-        if (!request.Text.Contains(" : ", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("请求历史未按“时间戳：十六进制报文”格式显示。");
-        }
-
-        if (!response.Text.Contains(" : ", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("响应历史未按“时间戳：十六进制报文”格式显示。");
+            throw new InvalidOperationException("轮询任务未刷新主站收发报文历史。");
         }
 
         tabs.SelectedIndex = 3;
@@ -244,6 +337,17 @@ internal static class Program
         tabs.SelectedIndex = 4;
         Pump(TimeSpan.FromMilliseconds(350));
         SavePage(form, outputDirectory, "7-自环日志.png");
+        tabs.SelectedIndex = 2;
+        Pump(TimeSpan.FromMilliseconds(350));
+        string slaveFrameHistory = GetField<TextBox>(form, "_slaveFrameBox").Text;
+        if (!slaveFrameHistory.Contains(" : 接收请求", StringComparison.Ordinal)
+            || !slaveFrameHistory.Contains(" : 发送响应", StringComparison.Ordinal)
+            || !slaveFrameHistory.Contains(" | ", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"从站报文历史未显示带时间戳的收发记录：{slaveFrameHistory}");
+        }
+
         RenderByteOrderProbe(outputDirectory);
         RenderPointTable(outputDirectory);
     }
@@ -715,6 +819,16 @@ internal static class Program
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
         while (stopwatch.Elapsed < duration)
+        {
+            Application.DoEvents();
+            Thread.Sleep(20);
+        }
+    }
+
+    private static void PumpUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (!condition() && stopwatch.Elapsed < timeout)
         {
             Application.DoEvents();
             Thread.Sleep(20);
