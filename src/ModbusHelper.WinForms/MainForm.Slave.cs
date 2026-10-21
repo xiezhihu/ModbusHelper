@@ -63,11 +63,11 @@ public sealed partial class MainForm
         _slavePage.AutoScroll = true;
         TableLayoutPanel root = new()
         {
-            Dock = DockStyle.Top,
+            Dock = DockStyle.Fill,
             RowCount = 3,
             ColumnCount = 1,
             Padding = new Padding(8),
-            AutoSize = true,
+            AutoSize = false,
             AutoSizeMode = AutoSizeMode.GrowAndShrink
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 160F));
@@ -103,6 +103,7 @@ public sealed partial class MainForm
         manualSplit.Panel2.Controls.Add(frameGroup);
         root.Controls.Add(manualSplit, 0, 2);
         _slavePage.Controls.Add(root);
+        _slavePage.Resize += (_, _) => UpdateSlaveRootLayout();
 
         UiHelpers.SetEnumOptions(
             _slaveTypeCombo,
@@ -147,6 +148,7 @@ public sealed partial class MainForm
         _slaveAddUnitButton.Click += (_, _) => AddSlaveUnit();
         _slaveDeleteUnitButton.Click += (_, _) => DeleteSlaveUnit();
         UpdateSlaveTypeVisibility();
+        UpdateSlaveRootLayout();
     }
 
     private GroupBox CreateSlaveEndpointGroup()
@@ -714,6 +716,45 @@ public sealed partial class MainForm
         _slaveRootLayout.RowStyles[0].Height = Math.Max(
             UiHelpers.Scale(_slaveRootLayout, 160),
             preferredHeight + UiHelpers.Scale(_slaveRootLayout, 8));
+        UpdateSlaveRootLayout();
+    }
+
+    private void UpdateSlaveRootLayout()
+    {
+        if (_slaveRootLayout is null)
+        {
+            return;
+        }
+
+        int minimumConfigHeight = UiHelpers.Scale(_slaveRootLayout, 250);
+        int minimumManualHeight = UiHelpers.Scale(_slaveRootLayout, 300);
+        int requiredHeight = (int)Math.Ceiling(
+            _slaveRootLayout.RowStyles[0].Height
+            + minimumConfigHeight
+            + minimumManualHeight
+            + _slaveRootLayout.Padding.Vertical);
+        bool canFillPage = _slavePage.ClientSize.Height >= requiredHeight;
+
+        if (canFillPage)
+        {
+            _slaveRootLayout.Dock = DockStyle.Fill;
+            _slaveRootLayout.AutoSize = false;
+            _slaveRootLayout.RowStyles[1].SizeType = SizeType.Percent;
+            _slaveRootLayout.RowStyles[1].Height = 58F;
+            _slaveRootLayout.RowStyles[2].SizeType = SizeType.Percent;
+            _slaveRootLayout.RowStyles[2].Height = 42F;
+        }
+        else
+        {
+            // 小窗口保留表格的最小可读高度，由页面滚动条承载超出区域。
+            _slaveRootLayout.Dock = DockStyle.Top;
+            _slaveRootLayout.AutoSize = true;
+            _slaveRootLayout.RowStyles[1].SizeType = SizeType.Absolute;
+            _slaveRootLayout.RowStyles[1].Height = minimumConfigHeight;
+            _slaveRootLayout.RowStyles[2].SizeType = SizeType.Absolute;
+            _slaveRootLayout.RowStyles[2].Height = minimumManualHeight;
+        }
+
         _slaveRootLayout.PerformLayout();
     }
 
