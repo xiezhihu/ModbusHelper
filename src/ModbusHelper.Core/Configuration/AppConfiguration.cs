@@ -13,7 +13,7 @@ public sealed class AppConfiguration
     /// <summary>配置版本，用于后续升级兼容。</summary>
     public int ConfigVersion { get; set; } = CurrentVersion;
 
-    /// <summary>界面当前地址基准。</summary>
+    /// <summary>主站读写、轮询和点位表的地址基准；从站模拟单独配置。</summary>
     public AddressBase AddressBase { get; set; } = AddressBase.ZeroBased;
 
     /// <summary>主站连接配置。</summary>

@@ -10,6 +10,9 @@ public sealed class SlaveSimulationConfiguration
     /// <summary>监听传输类型。</summary>
     public ConnectionType Type { get; set; } = ConnectionType.Tcp;
 
+    /// <summary>从站模拟界面地址基准，不影响主站连接和轮询页面。</summary>
+    public AddressBase AddressBase { get; set; } = AddressBase.ZeroBased;
+
     /// <summary>RTU 监听串口参数。</summary>
     public RtuConnectionConfiguration Rtu { get; set; } = new() { PortName = string.Empty };
 

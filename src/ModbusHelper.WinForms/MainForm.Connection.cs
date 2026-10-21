@@ -732,41 +732,12 @@ public sealed partial class MainForm
                 (int)_manualAddressInput.Value,
                 previousBase,
                 function);
-            ModbusFunction slaveFunction = AreaToFunction(UiHelpers.GetSelectedValue(
-                _slaveManualAreaCombo,
-                SlaveArea.HoldingRegisters));
-            ushort slaveProtocol = 0;
-            try
-            {
-                slaveProtocol = ModbusAddressConverter.ToProtocolAddress(
-                    (int)_slaveManualAddressInput.Value,
-                    previousBase,
-                    slaveFunction);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                // 无效显示地址回到所选存储区的首地址。
-            }
-
-            try
-            {
-                ConvertSlaveEditorAddresses(previousBase, next);
-            }
-            catch (ArgumentException)
-            {
-                // 从站初始值文本尚不完整时，仅保留原始文本。
-            }
-
             _currentAddressBase = next;
             _configuration.AddressBase = next;
             _manualAddressInput.Value = ModbusAddressConverter.ToDisplayAddress(
                 protocol,
                 next,
                 function);
-            _slaveManualAddressInput.Value = ModbusAddressConverter.ToDisplayAddress(
-                slaveProtocol,
-                next,
-                slaveFunction);
             UpdatePollingAddressDisplays();
         }
         catch (ArgumentOutOfRangeException)

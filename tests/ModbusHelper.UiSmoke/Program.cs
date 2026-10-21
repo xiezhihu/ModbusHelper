@@ -81,6 +81,7 @@ internal static class Program
         CheckAllTabs(form, tabs, outputDirectory, "小窗口布局报告.txt");
         form.Close();
         Pump(TimeSpan.FromSeconds(2));
+        CheckAddressBasePersistence(factory);
         foreach (string suffix in new[] { string.Empty, "-shm", "-wal" })
         {
             string path = testConfigurationPath + suffix;
@@ -108,6 +109,7 @@ internal static class Program
         GroupBox slaveUnitsGroup = GetField<GroupBox>(form, "_slaveUnitsGroup");
         int port = 0;
         tabs.SelectedIndex = 2;
+        CheckIndependentSlaveAddressBases(form);
         if (useRtu)
         {
             SelectComboByText(GetField<ComboBox>(form, "_slaveTypeCombo"), "RTU");
@@ -169,7 +171,6 @@ internal static class Program
             }
         }
 
-        SelectComboByText(GetField<ComboBox>(form, "_addressBaseCombo"), "1 基");
         NumericUpDown manualSlaveAddress = GetField<NumericUpDown>(form, "_slaveManualAddressInput");
         if (manualSlaveAddress.Value != 40001)
         {
@@ -366,8 +367,117 @@ internal static class Program
                 $"从站报文历史未显示带时间戳的收发记录：{slaveFrameHistory}");
         }
 
+        SavePage(form, outputDirectory, "11-从站独立地址基准.png");
         RenderByteOrderProbe(outputDirectory);
         RenderPointTable(outputDirectory);
+    }
+
+    private static void CheckIndependentSlaveAddressBases(Form form)
+    {
+        ComboBox masterBase = GetField<ComboBox>(form, "_addressBaseCombo");
+        ComboBox slaveBase = GetField<ComboBox>(form, "_slaveAddressBaseCombo");
+        NumericUpDown masterAddress = GetField<NumericUpDown>(form, "_manualAddressInput");
+        NumericUpDown slaveAddress = GetField<NumericUpDown>(form, "_slaveManualAddressInput");
+        SelectComboByText(masterBase, "0 基");
+        SelectComboByText(slaveBase, "0 基");
+        SelectComboByText(GetField<ComboBox>(form, "_manualFunctionCombo"), "03");
+        masterAddress.Value = 0;
+
+        DataGridView units = GetField<DataGridView>(form, "_slaveUnitGrid");
+        if (units.Rows.Count == 0)
+        {
+            GetField<Button>(form, "_slaveAddUnitButton").PerformClick();
+        }
+
+        string[] zeroBased = { "0 = 0, 7 = 123", "0 = 11", "0 = ON", "0 = OFF" };
+        string[] oneBased = { "40001 = 0, 40008 = 123", "30001 = 11", "1 = ON", "10001 = OFF" };
+        for (int index = 0; index < zeroBased.Length; index++)
+        {
+            units.Rows[0].Cells[index + 1].Value = zeroBased[index];
+        }
+
+        GetField<System.Collections.IList>(form, "_slaveRuleEditors").Clear();
+        (FindButton(form, "新增规则")
+            ?? throw new InvalidOperationException("未找到新增规则按钮。")).PerformClick();
+        DataGridView rules = GetField<DataGridView>(form, "_slaveRuleGrid");
+        rules.Rows[0].Cells[0].Value = false;
+        rules.CurrentCell = rules.Rows[0].Cells[3];
+        rules.BeginEdit(true);
+        ((TextBox)rules.EditingControl).Text = "7";
+        rules.EndEdit();
+        SelectComboByText(slaveBase, "1 基");
+        for (int index = 0; index < oneBased.Length; index++)
+        {
+            if (!string.Equals(
+                    Convert.ToString(units.Rows[0].Cells[index + 1].Value, CultureInfo.InvariantCulture),
+                    oneBased[index],
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("从站独立基准未同步换算全部四种存储区的初始值地址。");
+            }
+        }
+
+        if (masterAddress.Value != 0 || slaveAddress.Value != 40001
+            || !masterBase.Text.StartsWith("0 基", StringComparison.Ordinal)
+            || Convert.ToUInt16(rules.Rows[0].Cells[3].Value, CultureInfo.InvariantCulture) != 7
+            || Convert.ToString(rules.Rows[0].Cells[3].FormattedValue, CultureInfo.InvariantCulture) != "40008")
+        {
+            throw new InvalidOperationException("从站基准切换影响了主站地址，或未保持异常规则的协议地址。");
+        }
+
+        SelectComboByText(masterBase, "1 基");
+        SelectComboByText(masterBase, "0 基");
+        if (slaveAddress.Value != 40001
+            || !slaveBase.Text.StartsWith("1 基", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("主站基准切换不应影响从站独立基准或手动地址。");
+        }
+
+        rules.CurrentCell = rules.Rows[0].Cells[3];
+        rules.BeginEdit(true);
+        ((TextBox)rules.EditingControl).Text = "40010";
+        SelectComboByText(slaveBase, "0 基");
+        if (Convert.ToUInt16(rules.Rows[0].Cells[3].Value, CultureInfo.InvariantCulture) != 9
+            || Convert.ToString(rules.Rows[0].Cells[3].FormattedValue, CultureInfo.InvariantCulture) != "9")
+        {
+            throw new InvalidOperationException("切换从站基准时，尚在编辑的异常规则地址没有按旧基准提交。");
+        }
+
+        units.Rows[0].Cells[2].Value = "无效初始值";
+        SelectComboByText(slaveBase, "1 基");
+        if (!slaveBase.Text.StartsWith("0 基", StringComparison.Ordinal)
+            || Convert.ToString(units.Rows[0].Cells[1].Value, CultureInfo.InvariantCulture) != zeroBased[0]
+            || GetField<ToolStripStatusLabel>(form, "_statusConnectionLabel").Text?
+                .Contains("未切换地址基准", StringComparison.Ordinal) != true)
+        {
+            throw new InvalidOperationException("初始值无效时应拒绝切换从站基准，且不能部分修改其他存储区。");
+        }
+
+        units.Rows[0].Cells[2].Value = zeroBased[1];
+        SelectComboByText(slaveBase, "1 基");
+        Console.WriteLine("已验证：主从独立地址基准、四区换算、规则编辑和无效初始值回滚。");
+    }
+
+    private static void CheckAddressBasePersistence(MethodInfo factory)
+    {
+        using Form restored = (Form)factory.Invoke(null, null)!;
+        restored.Show();
+        Pump(TimeSpan.FromMilliseconds(350));
+        if (!GetField<ComboBox>(restored, "_addressBaseCombo").Text
+                .StartsWith("0 基", StringComparison.Ordinal)
+            || !GetField<ComboBox>(restored, "_slaveAddressBaseCombo").Text
+                .StartsWith("1 基", StringComparison.Ordinal)
+            || GetField<NumericUpDown>(restored, "_manualAddressInput").Value != 0
+            || GetField<NumericUpDown>(restored, "_slaveManualAddressInput").Value != 40001
+            || GetField<Label>(restored, "_headerStatusLabel").Text != "未连接"
+            || GetField<Button>(restored, "_slaveStopButton").Enabled)
+        {
+            throw new InvalidOperationException("重新打开程序后主从基准应分别恢复，且不能自动启动连接或从站。");
+        }
+
+        restored.Close();
+        Pump(TimeSpan.FromSeconds(2));
+        Console.WriteLine("已验证：主站 0 基和从站 1 基分别持久化，重启不自动连接。");
     }
 
     private static void RenderByteOrderProbe(string outputDirectory)
@@ -613,12 +723,22 @@ internal static class Program
             throw new InvalidOperationException("从站重启后没有恢复初始表中的值 100。");
         }
 
-        ComboBox addressBase = GetField<ComboBox>(form, "_addressBaseCombo");
+        ComboBox addressBase = GetField<ComboBox>(form, "_slaveAddressBaseCombo");
         SelectComboByText(addressBase, "0 基");
         if (!Convert.ToString(unitGrid.Rows[0].Cells[1].Value, CultureInfo.InvariantCulture)!
-                .Contains("0 = 100", StringComparison.Ordinal))
+                .Contains("0 = 100", StringComparison.Ordinal)
+            || GetField<NumericUpDown>(form, "_slaveManualAddressInput").Value != 0
+            || GetField<NumericUpDown>(form, "_manualAddressInput").Value != 0
+            || !unitGrid.ReadOnly)
         {
-            throw new InvalidOperationException("0 基模式下初始值没有按“地址 = 值”格式显示。");
+            throw new InvalidOperationException("运行时切换从站 0 基应只换算从站显示，并保持初始值表锁定。");
+        }
+
+        read.PerformClick();
+        if (!result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
+                StringSplitOptions.None)[0].Contains("100 (0x0064)", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("从站切换地址基准后没有读取到同一个协议地址的数据。");
         }
 
         SelectComboByText(addressBase, "1 基");

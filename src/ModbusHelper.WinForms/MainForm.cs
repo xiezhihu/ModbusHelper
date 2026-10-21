@@ -200,7 +200,7 @@ public sealed partial class MainForm : Form
         SetToolTip(_responseTimeoutInput, "发送 Modbus 请求后等待完整响应帧的应用层超时。");
         SetToolTip(_retryCountInput, "通信失败后的重试次数，0 表示不重试。");
         SetToolTip(_retryDelayInput, "每次重试前等待的时间。");
-        SetToolTip(_addressBaseCombo, "只影响界面显示和输入：0 基为协议地址，1 基为设备手册常见的 40001 风格。");
+        SetToolTip(_addressBaseCombo, "只影响主站手动读写、轮询和点位表的地址显示与输入；从站模拟使用该页独立的地址基准。0 基为协议地址，1 基为设备手册常见的 40001 风格。");
         SetToolTip(_manualFunctionCombo, "选择要执行的 Modbus 功能码。读写数量上限会随功能码校验。");
         SetToolTip(_manualUnitInput, "读操作允许 1-247；写操作还允许 0（广播写）。");
         SetToolTip(_manualAddressInput, "按当前地址基准输入，发送给 NModbus 前会转换为 0 基地址。");
@@ -227,6 +227,10 @@ public sealed partial class MainForm : Form
         SetGridToolTip(_pollingGrid, "运行", "当前任务是否正在由轮询调度器执行。");
 
         SetToolTip(_slaveTypeCombo, "选择 RTU 串口从站或 TCP 网络从站。");
+        SetToolTip(
+            _slaveAddressBaseCombo,
+            "只控制从站模拟页面的地址显示和输入，不影响主站连接、轮询任务或点位表。"
+            + "0 基显示协议原生地址；1 基显示设备手册地址，例如保持寄存器 40001。");
         SetToolTip(_slaveSerialPortCombo, "从站监听使用的串口，不能与同一时间占用该串口的主站重复。");
         SetToolTip(_slaveBaudRateInput, "RTU 从站波特率，必须与主站一致。");
         SetToolTip(
@@ -241,15 +245,15 @@ public sealed partial class MainForm : Form
             "每一行是一个独立的模拟从站；表格中的“从站地址”就是 UnitID，必须与主站请求一致。"
             + "此表设置从站启动时的初始值；从站启动中和运行时表格会锁定，停止后才能编辑并在下次启动时加载。"
             + "列名中的 01/02/03/04 就是主站读取时对应的功能码。"
-            + "单元格填写“地址 = 值”，例如 40001 = 1234；空白表示该区域没有预置值。");
+            + "地址使用本页的从站地址基准；单元格填写“地址 = 值”，例如 1 基时为 40001 = 1234，0 基时为 0 = 1234；空白表示该区域没有预置值。");
         SetToolTip(
             _slaveRuleGrid,
             "规则只有在“启用”勾选且点击“应用规则”后才参与匹配。"
             + "触发条件是 UnitID、功能码相同，并且主站请求地址范围与规则范围有交集。"
-            + "连续地址数填 1 时只覆盖起始地址，例如 40001 和数量 1 只匹配 40001。");
+            + "地址使用本页的从站地址基准；连续地址数填 1 时只覆盖起始地址，例如 1 基时 40001 和数量 1 只匹配 40001。");
         SetToolTip(_slaveManualUnitInput, "要修改的模拟从站地址（UnitID）；必须先在上方单元表中配置该地址，新增单元时会自动选中新单元。");
         SetToolTip(_slaveManualAreaCombo, "选择独立的数据区：同一个数字地址在保持寄存器、输入寄存器、线圈、离散输入中分别存储，互不相同。");
-        SetToolTip(_slaveManualAddressInput, "模拟数据区的起始地址，遵循主界面当前地址基准；1 基时保持寄存器示例为 40001、输入寄存器为 30001。");
+        SetToolTip(_slaveManualAddressInput, "模拟数据区的起始地址，遵循本页独立的从站地址基准；0 基从 0 开始，1 基时保持寄存器示例为 40001、输入寄存器为 30001。");
         SetToolTip(_slaveManualCountInput, "要读取或写入的连续元素数量；寄存器是 ushort，线圈和离散输入是 0/1。");
         SetToolTip(
             _slaveManualValuesInput,

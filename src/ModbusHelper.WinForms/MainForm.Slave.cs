@@ -14,6 +14,7 @@ public sealed partial class MainForm
 {
     private static readonly char[] SlaveMapEntrySeparators = { ',', ';', '\r', '\n' };
     private readonly ComboBox _slaveTypeCombo = UiHelpers.CreateCombo();
+    private readonly ComboBox _slaveAddressBaseCombo = UiHelpers.CreateCombo();
     private readonly GroupBox _slaveRtuPanel = UiHelpers.CreateParameterGroup("RTU 串口参数");
     private readonly GroupBox _slaveTcpPanel = UiHelpers.CreateParameterGroup("TCP 监听参数");
     private readonly Panel _slaveParameterHost = new()
@@ -55,6 +56,8 @@ public sealed partial class MainForm
     private GroupBox? _slaveEndpointGroup;
     private GroupBox? _slaveUnitsGroup;
     private bool _slaveStartPending;
+    private AddressBase _currentSlaveAddressBase;
+    private bool _slaveAddressBaseInitializing;
     private long _lastSlaveFrameRevision = -1;
 
     private void InitializeSlavePage()
@@ -110,6 +113,12 @@ public sealed partial class MainForm
             Enum.GetValues<ConnectionType>(),
             type => type == ConnectionType.Rtu ? "RTU 串口从站" : "TCP 网络从站");
         UiHelpers.SetEnumOptions(
+            _slaveAddressBaseCombo,
+            Enum.GetValues<AddressBase>(),
+            addressBase => addressBase == AddressBase.ZeroBased
+                ? "0 基（协议原生）"
+                : "1 基（40001 风格）");
+        UiHelpers.SetEnumOptions(
             _slaveParityCombo,
             Enum.GetValues<SerialParity>(),
             parity => parity switch
@@ -142,6 +151,7 @@ public sealed partial class MainForm
             });
 
         _slaveTypeCombo.SelectedIndexChanged += (_, _) => UpdateSlaveTypeVisibility();
+        _slaveAddressBaseCombo.SelectedIndexChanged += (_, _) => OnSlaveAddressBaseChanged();
         _slaveManualAreaCombo.SelectedIndexChanged += OnSlaveManualAreaChanged;
         _slaveStartButton.Click += async (_, _) => await StartSlaveAsync();
         _slaveStopButton.Click += async (_, _) => await _services.SlaveSimulationManager.StopAsync();
@@ -170,12 +180,25 @@ public sealed partial class MainForm
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330F));
 
-        TableLayoutPanel typeTable = UiHelpers.CreateFieldTable(1);
-        typeTable.Dock = DockStyle.Top;
-        typeTable.AutoSize = true;
-        typeTable.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        typeTable.ColumnStyles[0].Width = 76F;
-        UiHelpers.AddField(typeTable, 0, "类型", _slaveTypeCombo);
+        TableLayoutPanel typeTable = new()
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 4
+        };
+        typeTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        for (int row = 0; row < typeTable.RowCount; row++)
+        {
+            typeTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
+
+        // 标签单独占行，避免高 DPI 下挤压类型和独立地址基准的下拉框。
+        typeTable.Controls.Add(UiHelpers.CreateLabel("类型"), 0, 0);
+        typeTable.Controls.Add(_slaveTypeCombo, 0, 1);
+        typeTable.Controls.Add(UiHelpers.CreateLabel("从站地址基准"), 0, 2);
+        typeTable.Controls.Add(_slaveAddressBaseCombo, 0, 3);
 
         ConfigureSlaveRtuPanel();
         ConfigureSlaveTcpPanel();
@@ -300,19 +323,19 @@ public sealed partial class MainForm
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.HoldingRegisters),
             "03 保持寄存器",
-            "主站功能码 03 读取此列；格式为“地址 = 值”，例如 40001 = 1234。");
+            "主站功能码 03 读取此列；格式为“地址 = 值”。从站 0 基示例：0 = 1234；1 基示例：40001 = 1234。");
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.InputRegisters),
             "04 输入寄存器",
-            "主站功能码 04 读取此列；格式为“地址 = 值”，例如 30001 = 1234。");
+            "主站功能码 04 读取此列；格式为“地址 = 值”。从站 0 基示例：0 = 1234；1 基示例：30001 = 1234。");
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.Coils),
             "01 线圈",
-            "主站功能码 01 读取此列；格式为“地址 = ON/OFF”，例如 1 = ON。");
+            "主站功能码 01 读取此列；格式为“地址 = ON/OFF”。从站 0 基示例：0 = ON；1 基示例：1 = ON。");
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.DiscreteInputs),
             "02 离散输入",
-            "主站功能码 02 读取此列；格式为“地址 = ON/OFF”，例如 10001 = OFF。");
+            "主站功能码 02 读取此列；格式为“地址 = ON/OFF”。从站 0 基示例：0 = OFF；1 基示例：10001 = OFF。");
     }
 
     private void AddSlaveUnitColumn(string propertyName, string headerText, string toolTip)
@@ -512,6 +535,10 @@ public sealed partial class MainForm
     private void ApplySlaveConfiguration()
     {
         SlaveSimulationConfiguration configuration = _configuration.SlaveSimulator;
+        _slaveAddressBaseInitializing = true;
+        UiHelpers.SelectOption(_slaveAddressBaseCombo, configuration.AddressBase);
+        _currentSlaveAddressBase = configuration.AddressBase;
+        _slaveAddressBaseInitializing = false;
         UiHelpers.SelectOption(_slaveTypeCombo, configuration.Type);
         UiHelpers.SelectOption(_slaveParityCombo, configuration.Rtu.Parity);
         UiHelpers.SelectOption(_slaveStopBitsCombo, configuration.Rtu.StopBits);
@@ -538,7 +565,7 @@ public sealed partial class MainForm
         _slaveUnitEditors.Clear();
         foreach (SlaveUnitConfiguration unit in configuration.Units)
         {
-            _slaveUnitEditors.Add(SlaveUnitEditor.FromConfiguration(unit, _configuration.AddressBase));
+            _slaveUnitEditors.Add(SlaveUnitEditor.FromConfiguration(unit, configuration.AddressBase));
         }
 
         _slaveUnitEditors.RaiseListChangedEvents = true;
@@ -549,7 +576,7 @@ public sealed partial class MainForm
         _slaveManualCurrentArea = SlaveArea.HoldingRegisters;
         _slaveManualAddressInput.Value = ModbusAddressConverter.ToDisplayAddress(
             0,
-            _configuration.AddressBase,
+            configuration.AddressBase,
             ModbusFunction.ReadHoldingRegisters);
 
         _slaveRuleEditors.RaiseListChangedEvents = false;
@@ -577,8 +604,9 @@ public sealed partial class MainForm
 
     private SlaveSimulationConfiguration BuildSlaveConfiguration()
     {
+        AddressBase addressBase = _currentSlaveAddressBase;
         List<SlaveUnitConfiguration> units = _slaveUnitEditors
-            .Select(editor => editor.ToConfiguration(_configuration.AddressBase))
+            .Select(editor => editor.ToConfiguration(addressBase))
             .ToList();
         foreach (ExceptionRuleEditor rule in _slaveRuleEditors)
         {
@@ -590,6 +618,7 @@ public sealed partial class MainForm
         return new SlaveSimulationConfiguration
         {
             Type = UiHelpers.GetSelectedValue(_slaveTypeCombo, ConnectionType.Tcp),
+            AddressBase = addressBase,
             Rtu = new RtuConnectionConfiguration
             {
                 PortName = _slaveSerialPortCombo.Text,
@@ -793,9 +822,7 @@ public sealed partial class MainForm
             return;
         }
 
-        AddressBase addressBase = UiHelpers.GetSelectedValue(
-            _addressBaseCombo,
-            AddressBase.ZeroBased);
+        AddressBase addressBase = _currentSlaveAddressBase;
         int registerAddress = ModbusAddressConverter.ToDisplayAddress(
             0,
             addressBase,
@@ -857,6 +884,89 @@ public sealed partial class MainForm
         _statusConnectionLabel.ForeColor = Color.DarkGreen;
     }
 
+    private void OnSlaveAddressBaseChanged()
+    {
+        if (_slaveAddressBaseInitializing)
+        {
+            return;
+        }
+
+        AddressBase next = UiHelpers.GetSelectedValue(
+            _slaveAddressBaseCombo,
+            AddressBase.ZeroBased);
+        if (next == _currentSlaveAddressBase)
+        {
+            return;
+        }
+
+        AddressBase previous = _currentSlaveAddressBase;
+        List<SlaveUnitEditor> convertedUnits;
+        try
+        {
+            // 仍按旧基准提交编辑；所有文本解析成功后才一起替换，防止地址被部分换算。
+            if (!_slaveUnitGrid.EndEdit() || !_slaveRuleGrid.EndEdit())
+            {
+                throw new InvalidOperationException("请先完成表格中的地址编辑。");
+            }
+
+            convertedUnits = _slaveUnitEditors
+                .Select(unit => SlaveUnitEditor.FromConfiguration(
+                    unit.ToConfiguration(previous),
+                    next))
+                .ToList();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            _slaveAddressBaseInitializing = true;
+            try
+            {
+                UiHelpers.SelectOption(_slaveAddressBaseCombo, previous);
+            }
+            finally
+            {
+                _slaveAddressBaseInitializing = false;
+            }
+
+            ShowSlaveError($"未切换地址基准：{exception.Message} 请修正初始值或规则地址后重试。");
+            return;
+        }
+
+        ModbusFunction function = AreaToFunction(
+            UiHelpers.GetSelectedValue(_slaveManualAreaCombo, SlaveArea.HoldingRegisters));
+        ushort protocolAddress = 0;
+        try
+        {
+            protocolAddress = ModbusAddressConverter.ToProtocolAddress(
+                (int)_slaveManualAddressInput.Value,
+                previous,
+                function);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // 当前显示地址在旧基准下无效时，切换后回到所选区域的首地址。
+        }
+
+        _currentSlaveAddressBase = next;
+        _configuration.SlaveSimulator.AddressBase = next;
+        for (int index = 0; index < convertedUnits.Count; index++)
+        {
+            SlaveUnitEditor source = convertedUnits[index];
+            SlaveUnitEditor target = _slaveUnitEditors[index];
+            target.HoldingRegisters = source.HoldingRegisters;
+            target.InputRegisters = source.InputRegisters;
+            target.Coils = source.Coils;
+            target.DiscreteInputs = source.DiscreteInputs;
+        }
+
+        _slaveUnitEditors.ResetBindings();
+        _slaveManualAddressInput.Value = ModbusAddressConverter.ToDisplayAddress(
+            protocolAddress,
+            next,
+            function);
+        _slaveUnitGrid.Invalidate();
+        _slaveRuleGrid.Invalidate();
+    }
+
     private void OnSlaveManualAreaChanged(object? sender, EventArgs e)
     {
         SlaveArea nextArea = UiHelpers.GetSelectedValue(
@@ -867,9 +977,7 @@ public sealed partial class MainForm
             return;
         }
 
-        AddressBase addressBase = UiHelpers.GetSelectedValue(
-            _addressBaseCombo,
-            AddressBase.ZeroBased);
+        AddressBase addressBase = _currentSlaveAddressBase;
         ModbusFunction previousFunction = AreaToFunction(_slaveManualCurrentArea);
         ModbusFunction nextFunction = AreaToFunction(nextArea);
         ushort protocolAddress;
@@ -903,7 +1011,7 @@ public sealed partial class MainForm
             ModbusFunction function = AreaToFunction(area);
             ushort address = ModbusAddressConverter.ToProtocolAddress(
                 (int)_slaveManualAddressInput.Value,
-                UiHelpers.GetSelectedValue(_addressBaseCombo, AddressBase.ZeroBased),
+                _currentSlaveAddressBase,
                 function);
             object valuesToWrite;
             if (area is SlaveArea.Coils or SlaveArea.DiscreteInputs)
@@ -981,7 +1089,7 @@ public sealed partial class MainForm
             ModbusFunction function = AreaToFunction(area);
             ushort address = ModbusAddressConverter.ToProtocolAddress(
                 (int)_slaveManualAddressInput.Value,
-                UiHelpers.GetSelectedValue(_addressBaseCombo, AddressBase.ZeroBased),
+                _currentSlaveAddressBase,
                 function);
             ushort count = checked((ushort)_slaveManualCountInput.Value);
             object values = _services.SlaveSimulationManager.ReadValues(
@@ -1039,9 +1147,7 @@ public sealed partial class MainForm
 
     private string GetSlaveAddressInputError()
     {
-        AddressBase addressBase = UiHelpers.GetSelectedValue(
-            _addressBaseCombo,
-            AddressBase.ZeroBased);
+        AddressBase addressBase = _currentSlaveAddressBase;
         if (addressBase != AddressBase.OneBased)
         {
             return "协议地址必须在 0 至 65535 范围内。";
@@ -1131,7 +1237,7 @@ public sealed partial class MainForm
 
         e.Value = ModbusAddressConverter.ToDisplayAddress(
                 rule.StartAddress,
-                UiHelpers.GetSelectedValue(_addressBaseCombo, AddressBase.ZeroBased),
+                _currentSlaveAddressBase,
                 rule.Function)
             .ToString(CultureInfo.InvariantCulture);
         e.FormattingApplied = true;
@@ -1154,7 +1260,7 @@ public sealed partial class MainForm
         {
             e.Value = ModbusAddressConverter.ToProtocolAddress(
                 display,
-                UiHelpers.GetSelectedValue(_addressBaseCombo, AddressBase.ZeroBased),
+                _currentSlaveAddressBase,
                 rule.Function);
             e.ParsingApplied = true;
         }
@@ -1168,36 +1274,6 @@ public sealed partial class MainForm
                 MessageBoxIcon.Warning);
             e.ParsingApplied = true;
         }
-    }
-
-    private void ConvertSlaveEditorAddresses(AddressBase previousBase, AddressBase nextBase)
-    {
-        foreach (SlaveUnitEditor unit in _slaveUnitEditors)
-        {
-            unit.HoldingRegisters = SlaveUnitEditor.ConvertRegisterMap(
-                unit.HoldingRegisters,
-                previousBase,
-                nextBase,
-                ModbusFunction.ReadHoldingRegisters);
-            unit.InputRegisters = SlaveUnitEditor.ConvertRegisterMap(
-                unit.InputRegisters,
-                previousBase,
-                nextBase,
-                ModbusFunction.ReadInputRegisters);
-            unit.Coils = SlaveUnitEditor.ConvertCoilMap(
-                unit.Coils,
-                previousBase,
-                nextBase,
-                ModbusFunction.ReadCoils);
-            unit.DiscreteInputs = SlaveUnitEditor.ConvertCoilMap(
-                unit.DiscreteInputs,
-                previousBase,
-                nextBase,
-                ModbusFunction.ReadDiscreteInputs);
-        }
-
-        _slaveUnitEditors.ResetBindings();
-        _slaveRuleGrid.Invalidate();
     }
 
     private sealed class SlaveUnitEditor
@@ -1254,26 +1330,6 @@ public sealed partial class MainForm
                     addressBase,
                     ModbusFunction.ReadDiscreteInputs)
             };
-        }
-
-        public static string ConvertRegisterMap(
-            string text,
-            AddressBase previousBase,
-            AddressBase nextBase,
-            ModbusFunction function)
-        {
-            List<RegisterInitialValue> values = ParseRegisterMap(text, previousBase, function);
-            return FormatRegisterMap(values, nextBase, function);
-        }
-
-        public static string ConvertCoilMap(
-            string text,
-            AddressBase previousBase,
-            AddressBase nextBase,
-            ModbusFunction function)
-        {
-            List<CoilInitialValue> values = ParseCoilMap(text, previousBase, function);
-            return FormatCoilMap(values, nextBase, function);
         }
     }
 

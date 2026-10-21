@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO.Ports;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json.Nodes;
 
 using ModbusHelper.Business.ByteOrder;
 using ModbusHelper.Business.Configuration;
@@ -981,7 +982,8 @@ static async Task TestConfigurationRoundTrip()
     {
         JsonConfigurationStore store = new(path);
         AppConfiguration configuration = JsonConfigurationStore.CreateDefaultConfiguration();
-        configuration.AddressBase = AddressBase.OneBased;
+        configuration.AddressBase = AddressBase.ZeroBased;
+        configuration.SlaveSimulator.AddressBase = AddressBase.OneBased;
         configuration.Connection.Type = ConnectionType.Rtu;
         configuration.Connection.IsConnected = true;
         configuration.TrendCapacity = 1234;
@@ -1011,7 +1013,8 @@ static async Task TestConfigurationRoundTrip()
         True(json.Contains("\"rtu\"", StringComparison.Ordinal));
 
         AppConfiguration loaded = await store.LoadAsync();
-        Equal(AddressBase.OneBased, loaded.AddressBase);
+        Equal(AddressBase.ZeroBased, loaded.AddressBase);
+        Equal(AddressBase.OneBased, loaded.SlaveSimulator.AddressBase);
         Equal(ConnectionType.Rtu, loaded.Connection.Type);
         False(loaded.Connection.IsConnected);
         False(loaded.PollingTasks[0].IsRunning);
@@ -1019,9 +1022,18 @@ static async Task TestConfigurationRoundTrip()
         Equal("温度", loaded.Points[0].Name);
         Equal(1, loaded.SlaveSimulator.Units[0].ExceptionRules.Count);
 
+        JsonObject legacyConfiguration = JsonNode.Parse(json)!.AsObject();
+        legacyConfiguration["slaveSimulator"]!.AsObject().Remove("addressBase");
+        await File.WriteAllTextAsync(path, legacyConfiguration.ToJsonString());
+        AppConfiguration legacyLoaded = await store.LoadAsync();
+        Equal(AddressBase.ZeroBased, legacyLoaded.SlaveSimulator.AddressBase);
+        Equal((ushort)0, legacyLoaded.SlaveSimulator.Units[0].ExceptionRules[0].StartAddress);
+        await store.SaveAsync(configuration);
+
         SqliteConfigurationStore sqliteStore = new(databasePath, path);
         AppConfiguration migrated = await sqliteStore.LoadAsync();
-        Equal(AddressBase.OneBased, migrated.AddressBase);
+        Equal(AddressBase.ZeroBased, migrated.AddressBase);
+        Equal(AddressBase.OneBased, migrated.SlaveSimulator.AddressBase);
         Equal(ConnectionType.Rtu, migrated.Connection.Type);
         Equal("温度", migrated.Points[0].Name);
         False(migrated.Connection.IsConnected);
@@ -1030,10 +1042,13 @@ static async Task TestConfigurationRoundTrip()
         migrated.Connection.IsConnected = true;
         migrated.PollingTasks[0].IsRunning = true;
         migrated.Points[0].Name = "压力";
+        migrated.AddressBase = AddressBase.OneBased;
+        migrated.SlaveSimulator.AddressBase = AddressBase.ZeroBased;
         await sqliteStore.SaveAsync(migrated);
         AppConfiguration sqliteLoaded = await sqliteStore.LoadAsync();
         Equal("压力", sqliteLoaded.Points[0].Name);
         Equal(AddressBase.OneBased, sqliteLoaded.AddressBase);
+        Equal(AddressBase.ZeroBased, sqliteLoaded.SlaveSimulator.AddressBase);
         False(sqliteLoaded.Connection.IsConnected);
         False(sqliteLoaded.PollingTasks[0].IsRunning);
     }
