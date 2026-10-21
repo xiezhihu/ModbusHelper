@@ -35,11 +35,15 @@ public sealed partial class MainForm
     private readonly Button _slaveStopButton = UiHelpers.CreateButton("停止从站", () => { }, 104);
     private readonly Button _slaveAddUnitButton = UiHelpers.CreateButton("新增单元", () => { }, 90);
     private readonly Button _slaveDeleteUnitButton = UiHelpers.CreateButton("删除单元", () => { }, 90);
+    private readonly Button _slaveRandomConfigButton = UiHelpers.CreateButton("随机数据配置", () => { }, 112);
+    private readonly Button _slaveGenerateRandomInitialButton =
+        UiHelpers.CreateButton("生成随机初始值", () => { }, 112);
     private readonly Label _slaveStateLabel = UiHelpers.CreateLabel("已停止", true);
     private readonly DataGridView _slaveUnitGrid = new();
     private readonly DataGridView _slaveRuleGrid = new();
     private readonly BindingList<SlaveUnitEditor> _slaveUnitEditors = new();
     private readonly BindingList<ExceptionRuleEditor> _slaveRuleEditors = new();
+    private List<SlaveRandomDataRule> _slaveRandomRules = new();
     private readonly LinkedList<string> _slaveManualHistory = new();
     private readonly NumericUpDown _slaveManualUnitInput =
         UiHelpers.CreateNumber(1, 247, 1);
@@ -157,6 +161,8 @@ public sealed partial class MainForm
         _slaveStopButton.Click += async (_, _) => await _services.SlaveSimulationManager.StopAsync();
         _slaveAddUnitButton.Click += (_, _) => AddSlaveUnit();
         _slaveDeleteUnitButton.Click += (_, _) => DeleteSlaveUnit();
+        _slaveRandomConfigButton.Click += (_, _) => OpenSlaveRandomDataConfiguration();
+        _slaveGenerateRandomInitialButton.Click += (_, _) => GenerateRandomInitialValues();
         UpdateSlaveTypeVisibility();
         UpdateSlaveRootLayout();
     }
@@ -298,6 +304,8 @@ public sealed partial class MainForm
         };
         toolbar.Controls.Add(_slaveAddUnitButton);
         toolbar.Controls.Add(_slaveDeleteUnitButton);
+        toolbar.Controls.Add(_slaveRandomConfigButton);
+        toolbar.Controls.Add(_slaveGenerateRandomInitialButton);
         layout.Controls.Add(toolbar, 0, 0);
         ConfigureSlaveUnitGrid();
         _slaveUnitGrid.MinimumSize = new Size(0, UiHelpers.Scale(_slaveUnitGrid, 62));
@@ -570,6 +578,9 @@ public sealed partial class MainForm
 
         _slaveUnitEditors.RaiseListChangedEvents = true;
         _slaveUnitEditors.ResetBindings();
+        _slaveRandomRules = configuration.RandomDataRules
+            .Select(CloneRandomDataRule)
+            .ToList();
         _slaveManualUnitInput.Value = _slaveUnitEditors.Count == 0
             ? 1
             : _slaveUnitEditors[0].UnitId;
@@ -632,7 +643,10 @@ public sealed partial class MainForm
                 ListenAddress = _slaveListenAddressInput.Text.Trim(),
                 Port = (int)_slaveListenPortInput.Value
             },
-            Units = units
+            Units = units,
+            RandomDataRules = _slaveRandomRules
+                .Select(CloneRandomDataRule)
+                .ToList()
         };
     }
 
@@ -712,6 +726,8 @@ public sealed partial class MainForm
         _slaveUnitGrid.ReadOnly = locked;
         _slaveAddUnitButton.Enabled = !locked;
         _slaveDeleteUnitButton.Enabled = !locked;
+        _slaveRandomConfigButton.Enabled = !locked;
+        _slaveGenerateRandomInitialButton.Enabled = !locked;
         if (_slaveUnitsGroup is not null)
         {
             string stateText = !locked
@@ -882,6 +898,193 @@ public sealed partial class MainForm
         _services.SlaveSimulationManager.UpdateExceptionRules(rules);
         _statusConnectionLabel.Text = $"已应用 {rules.Count} 条从站异常规则";
         _statusConnectionLabel.ForeColor = Color.DarkGreen;
+    }
+
+    private void OpenSlaveRandomDataConfiguration()
+    {
+        if (_services.SlaveSimulationManager.IsListening)
+        {
+            MessageBox.Show(
+                this,
+                "从站运行期间不能修改随机数据规则，请先停止从站。",
+                "随机数据配置",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        using SlaveRandomDataForm dialog = new(
+            _slaveRandomRules,
+            _currentSlaveAddressBase,
+            _slaveUnitEditors.Select(editor => editor.UnitId));
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _slaveRandomRules = dialog.AppliedRules
+            .Select(CloneRandomDataRule)
+            .ToList();
+        _configuration.SlaveSimulator = BuildSlaveConfiguration();
+        _statusConnectionLabel.Text = $"已保存 {_slaveRandomRules.Count} 条随机数据规则";
+        _statusConnectionLabel.ForeColor = Color.DarkGreen;
+    }
+
+    private void GenerateRandomInitialValues()
+    {
+        if (_services.SlaveSimulationManager.IsListening)
+        {
+            MessageBox.Show(
+                this,
+                "请先停止从站，再生成随机初始值。",
+                "随机初始值",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        try
+        {
+            _slaveUnitGrid.EndEdit();
+            int changedRules = 0;
+            foreach (SlaveRandomDataRule rule in _slaveRandomRules
+                         .Where(rule => rule.Enabled && rule.RandomizeOnStart))
+            {
+                SlaveUnitEditor? editor = _slaveUnitEditors
+                    .FirstOrDefault(item => item.UnitId == rule.UnitId);
+                if (editor is null)
+                {
+                    continue;
+                }
+
+                ModbusFunction function = AreaToFunction(rule.Area);
+                if (rule.Area is SlaveArea.Coils or SlaveArea.DiscreteInputs)
+                {
+                    string current = rule.Area == SlaveArea.Coils
+                        ? editor.Coils
+                        : editor.DiscreteInputs;
+                    List<CoilInitialValue> values = ParseCoilMap(
+                        current,
+                        _currentSlaveAddressBase,
+                        function);
+                    ReplaceRandomCoils(values, rule);
+                    string formatted = FormatCoilMap(
+                        values,
+                        _currentSlaveAddressBase,
+                        function);
+                    if (rule.Area == SlaveArea.Coils)
+                    {
+                        editor.Coils = formatted;
+                    }
+                    else
+                    {
+                        editor.DiscreteInputs = formatted;
+                    }
+                }
+                else
+                {
+                    string current = rule.Area == SlaveArea.HoldingRegisters
+                        ? editor.HoldingRegisters
+                        : editor.InputRegisters;
+                    List<RegisterInitialValue> values = ParseRegisterMap(
+                        current,
+                        _currentSlaveAddressBase,
+                        function);
+                    ReplaceRandomRegisters(values, rule);
+                    string formatted = FormatRegisterMap(
+                        values,
+                        _currentSlaveAddressBase,
+                        function);
+                    if (rule.Area == SlaveArea.HoldingRegisters)
+                    {
+                        editor.HoldingRegisters = formatted;
+                    }
+                    else
+                    {
+                        editor.InputRegisters = formatted;
+                    }
+                }
+
+                changedRules++;
+            }
+
+            _slaveUnitEditors.ResetBindings();
+            _configuration.SlaveSimulator = BuildSlaveConfiguration();
+            _statusConnectionLabel.Text = changedRules == 0
+                ? "没有启用“启动时随机”的规则。请先打开随机数据配置。"
+                : $"已按 {changedRules} 条规则生成随机初始值；启动时将使用这些值。";
+            _statusConnectionLabel.ForeColor = Color.DarkGreen;
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            ShowSlaveError($"生成随机初始值失败：{exception.Message}");
+        }
+    }
+
+    private static void ReplaceRandomRegisters(
+        List<RegisterInitialValue> values,
+        SlaveRandomDataRule rule)
+    {
+        for (int index = 0; index < rule.Count; index++)
+        {
+            ushort address = checked((ushort)(rule.StartAddress + index));
+            ushort value = (ushort)Random.Shared.Next(
+                rule.MinimumValue,
+                (int)rule.MaximumValue + 1);
+            int existing = values.FindIndex(item => item.Address == address);
+            RegisterInitialValue item = new() { Address = address, Value = value };
+            if (existing >= 0)
+            {
+                values[existing] = item;
+            }
+            else
+            {
+                values.Add(item);
+            }
+        }
+
+        values.Sort((left, right) => left.Address.CompareTo(right.Address));
+    }
+
+    private static void ReplaceRandomCoils(
+        List<CoilInitialValue> values,
+        SlaveRandomDataRule rule)
+    {
+        for (int index = 0; index < rule.Count; index++)
+        {
+            ushort address = checked((ushort)(rule.StartAddress + index));
+            bool value = rule.MinimumValue >= 1
+                || rule.MaximumValue > 0 && Random.Shared.Next(0, 2) == 1;
+            int existing = values.FindIndex(item => item.Address == address);
+            CoilInitialValue item = new() { Address = address, Value = value };
+            if (existing >= 0)
+            {
+                values[existing] = item;
+            }
+            else
+            {
+                values.Add(item);
+            }
+        }
+
+        values.Sort((left, right) => left.Address.CompareTo(right.Address));
+    }
+
+    private static SlaveRandomDataRule CloneRandomDataRule(SlaveRandomDataRule rule)
+    {
+        return new SlaveRandomDataRule
+        {
+            Enabled = rule.Enabled,
+            UnitId = rule.UnitId,
+            Area = rule.Area,
+            StartAddress = rule.StartAddress,
+            Count = rule.Count,
+            MinimumValue = rule.MinimumValue,
+            MaximumValue = rule.MaximumValue,
+            IntervalMilliseconds = rule.IntervalMilliseconds,
+            RandomizeOnStart = rule.RandomizeOnStart,
+            RandomizeWhileRunning = rule.RandomizeWhileRunning
+        };
     }
 
     private void OnSlaveAddressBaseChanged()

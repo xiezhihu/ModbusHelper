@@ -356,6 +356,17 @@ public sealed class SqliteConfigurationStore
         configuration.SlaveSimulator.Rtu ??= new RtuConnectionConfiguration();
         configuration.SlaveSimulator.Tcp ??= new TcpSlaveConfiguration();
         configuration.SlaveSimulator.Units ??= new List<SlaveUnitConfiguration>();
+        configuration.SlaveSimulator.RandomDataRules ??= new List<SlaveRandomDataRule>();
+        foreach (SlaveRandomDataRule rule in configuration.SlaveSimulator.RandomDataRules)
+        {
+            rule.Count = Math.Max(rule.Count, (ushort)1);
+            rule.IntervalMilliseconds = Math.Max(rule.IntervalMilliseconds, 100);
+            if (rule.MinimumValue > rule.MaximumValue)
+            {
+                (rule.MinimumValue, rule.MaximumValue) =
+                    (rule.MaximumValue, rule.MinimumValue);
+            }
+        }
 
         foreach (PollingTaskConfiguration task in configuration.PollingTasks)
         {

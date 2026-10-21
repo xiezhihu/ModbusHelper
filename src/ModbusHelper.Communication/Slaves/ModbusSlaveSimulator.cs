@@ -30,6 +30,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
     private TcpListener? _tcpListener;
     private CancellationTokenSource? _runCancellation;
     private Task? _listenTask;
+    private Task? _randomTask;
     private SlaveSimulationConfiguration? _configuration;
     private SlaveSimulatorState _state = SlaveSimulatorState.Stopped;
     private bool _disposed;
@@ -131,8 +132,20 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
             }
 
             CancellationToken token = _runCancellation.Token;
+            SlaveRandomDataRule[] randomRules = (configuration.RandomDataRules ?? new List<SlaveRandomDataRule>())
+                .Where(rule => rule.Enabled)
+                .Select(CloneRandomRule)
+                .ToArray();
+            foreach (SlaveRandomDataRule rule in randomRules.Where(rule => rule.RandomizeOnStart))
+            {
+                ApplyRandomRule(rule);
+            }
+
             IModbusSlaveNetwork network = _network!;
             _listenTask = Task.Run(() => network.ListenAsync(token), CancellationToken.None);
+            _randomTask = Task.Run(
+                () => RunRandomDataAsync(randomRules, token),
+                CancellationToken.None);
             SetState(SlaveSimulatorState.Listening, "从站模拟器已开始监听");
             _ = ObserveListeningAsync(_listenTask);
         }
@@ -145,6 +158,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
     {
         CancellationTokenSource? cancellation;
         Task? listenTask;
+        Task? randomTask;
         IModbusSlaveNetwork? network;
         SerialPort? serialPort;
         TcpListener? tcpListener;
@@ -152,11 +166,13 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
         {
             cancellation = _runCancellation;
             listenTask = _listenTask;
+            randomTask = _randomTask;
             network = _network;
             serialPort = _serialPort;
             tcpListener = _tcpListener;
             _runCancellation = null;
             _listenTask = null;
+            _randomTask = null;
             _network = null;
             _serialPort = null;
             _tcpListener = null;
@@ -188,6 +204,26 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
                     new SlaveSimulatorErrorEventArgs(
                         new TimeoutException("从站监听任务停止超时。"),
                         "检查串口或网络连接是否被底层阻塞。"));
+            }
+            catch (Exception) when (cancellation?.IsCancellationRequested == true)
+            {
+                // 停止过程中的取消属于正常路径。
+            }
+        }
+
+        if (randomTask is not null)
+        {
+            try
+            {
+                await randomTask.WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                ErrorOccurred?.Invoke(
+                    this,
+                    new SlaveSimulatorErrorEventArgs(
+                        new TimeoutException("从站随机数据任务停止超时。"),
+                        "检查随机数据周期配置和从站资源释放状态。"));
             }
             catch (Exception) when (cancellation?.IsCancellationRequested == true)
             {
@@ -335,6 +371,119 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
         }
 
         return store;
+    }
+
+    private void ApplyRandomRule(SlaveRandomDataRule rule)
+    {
+        lock (_syncRoot)
+        {
+            if (!_dataStores.TryGetValue(rule.UnitId, out SlaveDataStore? store))
+            {
+                return;
+            }
+
+            if (rule.Area is SlaveArea.Coils or SlaveArea.DiscreteInputs)
+            {
+                bool[] values = Enumerable
+                    .Range(0, rule.Count)
+                    .Select(_ => NextBoolean(rule.MinimumValue, rule.MaximumValue))
+                    .ToArray();
+                if (rule.Area == SlaveArea.Coils)
+                {
+                    store.CoilDiscretes.WritePoints(rule.StartAddress, values);
+                }
+                else
+                {
+                    store.CoilInputs.WritePoints(rule.StartAddress, values);
+                }
+
+                return;
+            }
+
+            ushort[] registers = Enumerable
+                .Range(0, rule.Count)
+                .Select(_ => NextUShort(rule.MinimumValue, rule.MaximumValue))
+                .ToArray();
+            if (rule.Area == SlaveArea.HoldingRegisters)
+            {
+                store.HoldingRegisters.WritePoints(rule.StartAddress, registers);
+            }
+            else
+            {
+                store.InputRegisters.WritePoints(rule.StartAddress, registers);
+            }
+        }
+    }
+
+    private async Task RunRandomDataAsync(
+        IReadOnlyList<SlaveRandomDataRule> rules,
+        CancellationToken cancellationToken)
+    {
+        SlaveRandomDataRule[] activeRules = rules
+            .Where(rule => rule.RandomizeWhileRunning)
+            .ToArray();
+        if (activeRules.Length == 0)
+        {
+            return;
+        }
+
+        DateTime[] nextUpdateTimes = activeRules
+            .Select(_ => DateTime.UtcNow)
+            .ToArray();
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            DateTime now = DateTime.UtcNow;
+            for (int index = 0; index < activeRules.Length; index++)
+            {
+                if (now < nextUpdateTimes[index])
+                {
+                    continue;
+                }
+
+                ApplyRandomRule(activeRules[index]);
+                nextUpdateTimes[index] = now.AddMilliseconds(
+                    Math.Max(activeRules[index].IntervalMilliseconds, 100));
+            }
+
+            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static ushort NextUShort(ushort minimum, ushort maximum)
+    {
+        return (ushort)Random.Shared.Next(minimum, (int)maximum + 1);
+    }
+
+    private static bool NextBoolean(ushort minimum, ushort maximum)
+    {
+        if (minimum >= 1)
+        {
+            return true;
+        }
+
+        if (maximum == 0)
+        {
+            return false;
+        }
+
+        return Random.Shared.Next(0, 2) == 1;
+    }
+
+    private static SlaveRandomDataRule CloneRandomRule(SlaveRandomDataRule rule)
+    {
+        return new SlaveRandomDataRule
+        {
+            Enabled = rule.Enabled,
+            UnitId = rule.UnitId,
+            Area = rule.Area,
+            StartAddress = rule.StartAddress,
+            Count = rule.Count,
+            MinimumValue = rule.MinimumValue,
+            MaximumValue = rule.MaximumValue,
+            IntervalMilliseconds = rule.IntervalMilliseconds,
+            RandomizeOnStart = rule.RandomizeOnStart,
+            RandomizeWhileRunning = rule.RandomizeWhileRunning
+        };
     }
 
     private async Task ObserveListeningAsync(Task listenTask)

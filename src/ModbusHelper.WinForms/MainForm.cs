@@ -288,6 +288,8 @@ public sealed partial class MainForm : Form
         SetToolTip(_slaveStopButton, "停止从站监听并释放串口或 TCP 端口。");
         SetButtonToolTip(_slavePage, "新增单元", "添加一个独立 UnitID 的模拟从站单元。");
         SetButtonToolTip(_slavePage, "删除单元", "删除当前选中的模拟从站单元。");
+        SetButtonToolTip(_slavePage, "随机数据配置", "配置多条随机数据规则，可选择启动时随机或运行中按周期随机。");
+        SetButtonToolTip(_slavePage, "生成随机初始值", "按已勾选“启动时随机”的规则生成初始表数据；只能在从站停止时执行。");
         SetButtonToolTip(_slavePage, "新增规则", "新增一条异常注入规则。");
         SetButtonToolTip(_slavePage, "删除规则", "删除当前选中的异常注入规则。");
         SetButtonToolTip(_slavePage, "应用规则", "将表格中的异常注入规则应用到当前模拟从站。");

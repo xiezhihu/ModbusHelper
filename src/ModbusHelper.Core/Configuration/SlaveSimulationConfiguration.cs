@@ -21,6 +21,9 @@ public sealed class SlaveSimulationConfiguration
 
     /// <summary>挂载的从站单元。</summary>
     public List<SlaveUnitConfiguration> Units { get; set; } = new();
+
+    /// <summary>随机数据规则。规则本身是持久化配置，运行时随机值不写回初始值。</summary>
+    public List<SlaveRandomDataRule> RandomDataRules { get; set; } = new();
 }
 
 /// <summary>
@@ -105,4 +108,40 @@ public sealed class ExceptionInjectionRule
 
     /// <summary>返回的 Modbus 异常码。</summary>
     public byte ExceptionCode { get; set; } = 2;
+}
+
+/// <summary>
+/// 从站模拟随机数据规则。
+/// </summary>
+public sealed class SlaveRandomDataRule
+{
+    /// <summary>规则是否启用。</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>目标从站地址（UnitID）。</summary>
+    public byte UnitId { get; set; } = 1;
+
+    /// <summary>目标存储区域。</summary>
+    public SlaveArea Area { get; set; } = SlaveArea.HoldingRegisters;
+
+    /// <summary>0 基协议起始地址。</summary>
+    public ushort StartAddress { get; set; }
+
+    /// <summary>连续生成的数据数量。</summary>
+    public ushort Count { get; set; } = 1;
+
+    /// <summary>随机值下限。寄存器范围为 0 至 65535，线圈区域使用 0 或 1。</summary>
+    public ushort MinimumValue { get; set; }
+
+    /// <summary>随机值上限。寄存器范围为 0 至 65535，线圈区域使用 0 或 1。</summary>
+    public ushort MaximumValue { get; set; } = 100;
+
+    /// <summary>运行中随机更新周期，最小 100 毫秒。</summary>
+    public int IntervalMilliseconds { get; set; } = 1000;
+
+    /// <summary>每次启动从站时先生成一批随机运行初始值。</summary>
+    public bool RandomizeOnStart { get; set; }
+
+    /// <summary>从站监听期间按周期更新运行内存。</summary>
+    public bool RandomizeWhileRunning { get; set; }
 }

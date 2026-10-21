@@ -23,12 +23,12 @@
 - 多轮询任务独立启停，同一主站串行执行，不同连接可独立并行。
 - Int16、UInt16、Int32、UInt32、Float、Double、ASCII、UTF-8 双向解析。
 - ABCD、CDAB、BADC、DCBA 四种寄存器数据布局。
-- NModbus 3.0.x RTU/TCP 从站模拟、多 UnitID 独立存储和手动改值。
+- NModbus 3.0.x RTU/TCP 从站模拟、多 UnitID 独立存储、手动改值和随机数据生成。
 - 指定 UnitID、功能码和地址的 Modbus 异常码注入。
 - Master/Slave、TX/RX 完整报文日志，暂停、过滤、搜索、CSV/TXT 导出。
 - 固定容量无锁 SPSC 趋势缓冲区，200 毫秒 UI Timer 批量刷新。
 - 字节序自动探测、范围高亮、推荐和一键应用。
-- SQLite 配置数据库与 EXE 同目录，保存连接、轮询、点位、解析、趋势容量和从站设置。
+- SQLite 配置数据库与 EXE 同目录，保存连接、轮询、点位、解析、趋势容量、从站设置和随机数据规则。
 - 首次启动自动迁移旧 JSON 配置；连接状态、轮询运行状态、实时趋势点和内存日志不持久化。
 
 ## 依赖版本
@@ -63,7 +63,7 @@ dotnet run --project tests/ModbusHelper.UiSmoke/ModbusHelper.UiSmoke.csproj --co
 powershell -ExecutionPolicy Bypass -File scripts/verify-layer-boundaries.ps1
 ```
 
-验证控制台覆盖配置往返、参数边界、四种布局、CRC/CSV 规则、SPSC 并发、五任务轮询、TCP 主从自环、异常码 02、重连和两层超时。UI 冒烟覆盖五个页签、五曲线、手动读取和字节序探测窗体。
+验证控制台覆盖配置往返、参数边界、四种布局、CRC/CSV 规则、SPSC 并发、五任务轮询、TCP 主从自环、异常码 02、随机数据、重连和两层超时。UI 冒烟覆盖五个页签、五曲线、手动读取和字节序探测窗体。
 
 RTU 虚拟串口专项验收：
 

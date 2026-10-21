@@ -40,6 +40,7 @@ await RunAsync("CSV 转义与 BOM", TestCsvExport);
 await RunAsync("SPSC 环形缓冲区", TestSpscRingBuffer);
 await RunAsync("通信统计", TestStatistics);
 await RunAsync("TCP 主从自环", TestTcpSelfLoop);
+await RunAsync("从站随机数据", TestSlaveRandomData);
 await RunAsync("两层超时", TestTimeoutLayers);
 int rtuArgumentIndex = Array.FindIndex(
     args,
@@ -656,6 +657,85 @@ static int GetFreeTcpPort()
     return port;
 }
 
+static async Task TestSlaveRandomData()
+{
+    int port = GetFreeTcpPort();
+    SlaveSimulationConfiguration configuration = new()
+    {
+        Type = ConnectionType.Tcp,
+        Tcp = new TcpSlaveConfiguration
+        {
+            ListenAddress = "127.0.0.1",
+            Port = port
+        },
+        Units =
+        {
+            new SlaveUnitConfiguration
+            {
+                UnitId = 1,
+                HoldingRegisters =
+                {
+                    new RegisterInitialValue { Address = 0, Value = 0 }
+                },
+                InputRegisters =
+                {
+                    new RegisterInitialValue { Address = 0, Value = 0 }
+                }
+            }
+        },
+        RandomDataRules =
+        {
+            new SlaveRandomDataRule
+            {
+                UnitId = 1,
+                Area = SlaveArea.HoldingRegisters,
+                StartAddress = 0,
+                Count = 1,
+                MinimumValue = 123,
+                MaximumValue = 123,
+                RandomizeOnStart = true
+            },
+            new SlaveRandomDataRule
+            {
+                UnitId = 1,
+                Area = SlaveArea.InputRegisters,
+                StartAddress = 0,
+                Count = 1,
+                MinimumValue = 456,
+                MaximumValue = 456,
+                IntervalMilliseconds = 100,
+                RandomizeWhileRunning = true
+            }
+        }
+    };
+
+    await using ModbusSlaveSimulator simulator = new();
+    await simulator.StartAsync(configuration);
+    await Task.Delay(250);
+    ushort[] startupValue = (ushort[])simulator.ReadValues(
+        1,
+        SlaveArea.HoldingRegisters,
+        0,
+        1);
+    ushort[] runningValue = (ushort[])simulator.ReadValues(
+        1,
+        SlaveArea.InputRegisters,
+        0,
+        1);
+    Equal((ushort)123, startupValue[0]);
+    Equal((ushort)456, runningValue[0]);
+
+    await simulator.StopAsync();
+    await simulator.StartAsync(configuration);
+    ushort[] resetValue = (ushort[])simulator.ReadValues(
+        1,
+        SlaveArea.InputRegisters,
+        0,
+        1);
+    Equal((ushort)0, resetValue[0]);
+    await simulator.StopAsync();
+}
+
 static async Task TestTimeoutLayers()
 {
     await VerifyTimeoutAsync(
@@ -1005,6 +1085,18 @@ static async Task TestConfigurationRoundTrip()
             StartAddress = 0,
             ExceptionCode = 2
         });
+        configuration.SlaveSimulator.RandomDataRules.Add(new SlaveRandomDataRule
+        {
+            UnitId = 1,
+            Area = SlaveArea.InputRegisters,
+            StartAddress = 5,
+            Count = 2,
+            MinimumValue = 10,
+            MaximumValue = 20,
+            IntervalMilliseconds = 250,
+            RandomizeOnStart = true,
+            RandomizeWhileRunning = true
+        });
 
         await store.SaveAsync(configuration);
         string json = await File.ReadAllTextAsync(path);
@@ -1021,6 +1113,9 @@ static async Task TestConfigurationRoundTrip()
         Equal(1234, loaded.TrendCapacity);
         Equal("温度", loaded.Points[0].Name);
         Equal(1, loaded.SlaveSimulator.Units[0].ExceptionRules.Count);
+        Equal(1, loaded.SlaveSimulator.RandomDataRules.Count);
+        Equal((ushort)5, loaded.SlaveSimulator.RandomDataRules[0].StartAddress);
+        True(loaded.SlaveSimulator.RandomDataRules[0].RandomizeWhileRunning);
 
         JsonObject legacyConfiguration = JsonNode.Parse(json)!.AsObject();
         legacyConfiguration["slaveSimulator"]!.AsObject().Remove("addressBase");

@@ -134,6 +134,38 @@ public static class ConnectionParameterValidator
             }
         }
 
+        HashSet<byte> unitIds = configuration.Units
+            .Select(unit => unit.UnitId)
+            .ToHashSet();
+        foreach (SlaveRandomDataRule rule in configuration.RandomDataRules ?? new List<SlaveRandomDataRule>())
+        {
+            if (!unitIds.Contains(rule.UnitId))
+            {
+                result.AddError($"随机数据规则使用了未配置的从站地址 {rule.UnitId}。");
+            }
+
+            if (rule.Count == 0 || !ModbusAddressConverter.IsRangeValid(rule.StartAddress, rule.Count))
+            {
+                result.AddError($"从站 {rule.UnitId} 的随机数据规则地址范围无效。");
+            }
+
+            if (rule.MinimumValue > rule.MaximumValue)
+            {
+                result.AddError($"从站 {rule.UnitId} 的随机数据规则最小值不能大于最大值。");
+            }
+
+            if (rule.Area is SlaveArea.Coils or SlaveArea.DiscreteInputs
+                && rule.MaximumValue > 1)
+            {
+                result.AddError($"从站 {rule.UnitId} 的线圈或离散输入随机值只能为 0 或 1。");
+            }
+
+            if (rule.RandomizeWhileRunning && rule.IntervalMilliseconds < 100)
+            {
+                result.AddError($"从站 {rule.UnitId} 的运行中随机周期不能小于 100 毫秒。");
+            }
+        }
+
         if (configuration.Type == ConnectionType.Rtu)
         {
             ValidateRtu(configuration.Rtu, result);
