@@ -110,6 +110,7 @@ internal static class Program
         int port = 0;
         tabs.SelectedIndex = 2;
         CheckIndependentSlaveAddressBases(form);
+        CheckDuplicateSlaveUnitIds(form);
         CheckSlaveInitialDataEditor(form, outputDirectory);
         if (useRtu)
         {
@@ -580,6 +581,45 @@ internal static class Program
         CheckSlaveInitialDataValidation(owner, source);
         CheckSlaveInitialDataMainEntry(owner, outputDirectory);
         Console.WriteLine("已验证：1000 行初始值、四区明细、小窗口、多选删除、末次输入、无效值拒绝、取消和主表回填。");
+    }
+
+    private static void CheckDuplicateSlaveUnitIds(Form form)
+    {
+        DataGridView grid = GetField<DataGridView>(form, "_slaveUnitGrid");
+        if (grid.Rows.Count < 2)
+        {
+            GetField<Button>(form, "_slaveAddUnitButton").PerformClick();
+        }
+
+        if (grid.Rows.Count < 2)
+        {
+            throw new InvalidOperationException("无法创建第二个从站单元进行重复地址校验。");
+        }
+
+        byte firstId = Convert.ToByte(grid.Rows[0].Cells[0].Value, CultureInfo.InvariantCulture);
+        DataGridViewCell cell = grid.Rows[1].Cells[0];
+        cell.Value = firstId;
+        bool valid = (bool)form.GetType()
+            .GetMethod("ValidateConfiguredSlaveUnitIds", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(form, new object[] { false })!;
+        if (valid || string.IsNullOrWhiteSpace(grid.Rows[1].ErrorText))
+        {
+            throw new InvalidOperationException("重复从站地址应被拦截并显示错误。");
+        }
+
+        grid.Rows[1].Cells[0].Value = 2;
+        valid = (bool)form.GetType()
+            .GetMethod("ValidateConfiguredSlaveUnitIds", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(form, new object[] { false })!;
+        if (!valid
+            || !string.IsNullOrWhiteSpace(grid.Rows[1].ErrorText)
+            || grid.Rows[1].Cells[0].Value is not byte)
+        {
+            throw new InvalidOperationException("修正重复从站地址后，表格仍处于错误状态。");
+        }
+
+        GetField<NumericUpDown>(form, "_slaveManualUnitInput").Value = firstId;
+        Console.WriteLine("已验证：同一监听端口内从站地址不能重复。");
     }
 
     private static void CheckSlaveInitialDataValidation(Form owner, SlaveUnitConfiguration source)

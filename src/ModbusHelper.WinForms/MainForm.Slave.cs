@@ -333,6 +333,8 @@ public sealed partial class MainForm
         _slaveUnitGrid.CellFormatting += OnSlaveUnitGridCellFormatting;
         _slaveUnitGrid.CellToolTipTextNeeded += OnSlaveUnitGridCellToolTipTextNeeded;
         _slaveUnitGrid.CellDoubleClick += OnSlaveUnitGridCellDoubleClick;
+        _slaveUnitGrid.CellValidating += OnSlaveUnitGridCellValidating;
+        _slaveUnitGrid.CellEndEdit += (_, _) => ValidateConfiguredSlaveUnitIds(false);
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.UnitId),
             "从站地址",
@@ -588,6 +590,7 @@ public sealed partial class MainForm
 
         _slaveUnitEditors.RaiseListChangedEvents = true;
         _slaveUnitEditors.ResetBindings();
+        ValidateConfiguredSlaveUnitIds(false);
         _slaveRandomRules = configuration.RandomDataRules
             .Select(CloneRandomDataRule)
             .ToList();
@@ -664,7 +667,11 @@ public sealed partial class MainForm
     {
         try
         {
-            _slaveUnitGrid.EndEdit();
+            if (!_slaveUnitGrid.EndEdit() || !ValidateConfiguredSlaveUnitIds())
+            {
+                return;
+            }
+
             _slaveRuleGrid.EndEdit();
             SlaveSimulationConfiguration configuration = BuildSlaveConfiguration();
             ValidationResult validation =
@@ -748,6 +755,103 @@ public sealed partial class MainForm
                     : "从站启动中，已锁定";
             _slaveUnitsGroup.Text = $"模拟设备与初始数据（{stateText}）";
         }
+    }
+
+    private void OnSlaveUnitGridCellValidating(
+        object? sender,
+        DataGridViewCellValidatingEventArgs e)
+    {
+        if (e.RowIndex < 0
+            || e.ColumnIndex < 0
+            || e.ColumnIndex != 0)
+        {
+            return;
+        }
+
+        string text = Convert.ToString(
+            e.FormattedValue,
+            CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+        if (!byte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte unitId)
+            || unitId is < 1 or > 247)
+        {
+            _slaveUnitGrid.Rows[e.RowIndex].ErrorText =
+                "从站地址必须是 1 至 247，且同一个监听端口内不能重复。";
+            e.Cancel = true;
+            return;
+        }
+
+        SlaveUnitEditor? current = _slaveUnitGrid.Rows[e.RowIndex].DataBoundItem as SlaveUnitEditor;
+        bool duplicated = _slaveUnitEditors.Any(
+            editor => !ReferenceEquals(editor, current) && editor.UnitId == unitId);
+        if (duplicated)
+        {
+            _slaveUnitGrid.Rows[e.RowIndex].ErrorText =
+                $"从站地址 {unitId} 已存在。一个监听端口内每个从站地址只能配置一行。";
+            e.Cancel = true;
+            return;
+        }
+
+        _slaveUnitGrid.Rows[e.RowIndex].ErrorText = string.Empty;
+    }
+
+    private bool ValidateConfiguredSlaveUnitIds(bool showMessage = true)
+    {
+        Dictionary<byte, List<int>> rowsById = new();
+        for (int index = 0; index < _slaveUnitEditors.Count; index++)
+        {
+            byte unitId = _slaveUnitEditors[index].UnitId;
+            if (!rowsById.TryGetValue(unitId, out List<int>? rows))
+            {
+                rows = new List<int>();
+                rowsById.Add(unitId, rows);
+            }
+
+            rows.Add(index);
+        }
+
+        foreach (DataGridViewRow row in _slaveUnitGrid.Rows)
+        {
+            row.ErrorText = string.Empty;
+        }
+
+        List<byte> duplicateIds = rowsById
+            .Where(pair => pair.Value.Count > 1)
+            .Select(pair => pair.Key)
+            .OrderBy(value => value)
+            .ToList();
+        foreach (byte duplicateId in duplicateIds)
+        {
+            foreach (int rowIndex in rowsById[duplicateId])
+            {
+                if (rowIndex < _slaveUnitGrid.Rows.Count)
+                {
+                    _slaveUnitGrid.Rows[rowIndex].ErrorText =
+                        $"从站地址 {duplicateId} 重复。请修改或删除其中一行。";
+                }
+            }
+        }
+
+        bool invalidId = _slaveUnitEditors.Any(
+            editor => editor.UnitId is < 1 or > 247);
+        if (duplicateIds.Count == 0 && !invalidId)
+        {
+            return true;
+        }
+
+        string message = duplicateIds.Count > 0
+            ? $"从站地址 {string.Join("、", duplicateIds)} 重复。一个监听端口内每个从站地址只能配置一行。"
+            : "从站地址必须在 1 至 247 范围内。";
+        if (showMessage)
+        {
+            MessageBox.Show(
+                this,
+                message,
+                "从站地址错误",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        return false;
     }
 
     private void UpdateSlaveTypeVisibility()
