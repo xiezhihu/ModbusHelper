@@ -155,6 +155,8 @@ public sealed partial class MainForm
         ModbusLogLevel minimum = UiHelpers.GetSelectedValue(
             _logLevelCombo,
             ModbusLogLevel.Debug);
+        int firstDisplayedRow = _logGrid.FirstDisplayedScrollingRowIndex;
+        bool followLatest = firstDisplayedRow <= 0;
         IReadOnlyList<ModbusLogRecord> snapshot = _services.LogService.GetSnapshot(
             minimum,
             _logSearchInput.Text,
@@ -169,6 +171,12 @@ public sealed partial class MainForm
 
         _logBindings.RaiseListChangedEvents = true;
         _logBindings.ResetBindings();
+        if (!followLatest
+            && _logGrid.Rows.Count > 0
+            && firstDisplayedRow < _logGrid.Rows.Count)
+        {
+            _logGrid.FirstDisplayedScrollingRowIndex = firstDisplayedRow;
+        }
     }
 
     private void OnLogGridCellFormatting(
@@ -186,7 +194,7 @@ public sealed partial class MainForm
             if (e.Value is DateTimeOffset timestamp)
             {
                 e.Value = timestamp.ToString(
-                    "yyyy-MM-dd HH:mm:ss.fff",
+                    "【yyyy-MM-dd HH:mm:ss.fff】",
                     System.Globalization.CultureInfo.InvariantCulture);
                 e.FormattingApplied = true;
             }

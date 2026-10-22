@@ -196,10 +196,18 @@ public sealed partial class MainForm : Form
         SetToolTip(_tcpHostInput, "TCP 从站的 IP 地址或主机名。");
         SetToolTip(_tcpPortInput, "TCP 从站监听端口，Modbus TCP 常用端口为 502。");
         SetToolTip(_tcpConnectTimeoutInput, "建立 TCP 连接时的连接超时，不等同于应用层应答超时。");
-        SetToolTip(_transportTimeoutInput, "串口或 TCP 底层读写超时。");
-        SetToolTip(_responseTimeoutInput, "发送 Modbus 请求后等待完整响应帧的应用层超时。");
-        SetToolTip(_retryCountInput, "通信失败后的重试次数，0 表示不重试。");
-        SetToolTip(_retryDelayInput, "每次重试前等待的时间。");
+        SetToolTip(
+            _transportTimeoutInput,
+            "传输层超时：串口一次底层读写或 TCP Socket 一次收发最多等待多久；未收到数据就会报传输层超时。");
+        SetToolTip(
+            _responseTimeoutInput,
+            "应用层应答超时：从发送请求开始，到收到完整 Modbus 响应帧最多等待多久；它可能早于所有重试完成。");
+        SetToolTip(
+            _retryCountInput,
+            "通信失败后的重试次数。填 0 表示只发送 1 次；填 3 表示初次发送失败后最多再发送 3 次。");
+        SetToolTip(
+            _retryDelayInput,
+            "每次失败后、下一次重试前等待的时间；总等待预算约为（重试次数+1）×传输层超时+重试次数×间隔。");
         SetToolTip(_addressBaseCombo, "只影响主站手动读写、轮询和点位表的地址显示与输入；从站模拟使用该页独立的地址基准。0 基为协议地址，1 基为设备手册常见的 40001 风格。");
         SetToolTip(_manualFunctionCombo, "选择要执行的 Modbus 功能码。读写数量上限会随功能码校验。");
         SetToolTip(_manualUnitInput, "读操作允许 1-247；写操作还允许 0（广播写）。");
@@ -211,8 +219,8 @@ public sealed partial class MainForm : Form
         SetToolTip(_executeManualButton, "立即执行一次当前参数对应的读写操作。");
         SetToolTip(_connectButton, "按当前连接参数建立主站连接。");
         SetToolTip(_disconnectButton, "断开当前主站连接并停止相关轮询任务。");
-        SetToolTip(_requestHexBox, "主站最近发送的请求历史，格式为“时间戳：十六进制报文”；重试会逐条显示。");
-        SetToolTip(_responseHexBox, "主站最近收到的响应历史，格式为“时间戳：十六进制报文”；轮询和重试产生的每个响应都会单独显示。");
+        SetToolTip(_requestHexBox, "主站最近发送的请求历史，格式为“【时间】十六进制报文”；新增记录会自动滚动到末尾，重试会逐条显示。");
+        SetToolTip(_responseHexBox, "主站最近收到的响应历史，格式为“【时间】十六进制报文”；新增记录会自动滚动到末尾，轮询和重试产生的每个响应都会单独显示。");
         SetToolTip(_parsedValueBox, "显示当前这次操作的解析结果；寄存器会列出原始 ushort 和转换值，线圈或离散输入会按请求起始地址递增列出地址和值。");
 
         SetToolTip(_pollingGrid, "支持 Ctrl 或 Shift 多选任务；双击单元格可编辑任务参数。");
@@ -260,8 +268,8 @@ public sealed partial class MainForm : Form
             _slaveManualValuesInput,
             "这里直接修改当前运行中的从站内存，主站下一次读取即可看到新值；停止后临时修改会丢失，重新启动会加载上方初始值。"
             + "多个值用逗号、分号或空格分隔；寄存器可写十进制或 0x 十六进制，线圈使用 0/1 或 ON/OFF。");
-        SetToolTip(_slaveManualResultBox, "按时间倒序保留最近 100 条读取、写入和错误记录；写入只修改运行中的临时内存。");
-        SetToolTip(_slaveFrameBox, "按时间倒序显示最近 200 条从站请求/响应，格式为完整时间戳、方向、原始十六进制报文和解析含义。");
+        SetToolTip(_slaveManualResultBox, "按时间正序显示最近 100 条读取、写入和错误记录，格式为“【时间】信息”；新增记录会自动滚动到末尾，写入只修改运行中的临时内存。");
+        SetToolTip(_slaveFrameBox, "按时间正序显示最近 200 条从站请求/响应，格式为“【时间】方向 | 原始十六进制报文 | 解析含义”；新增记录会自动滚动到末尾。");
 
         SetToolTip(_trendWindowCombo, "只显示最近 1 分钟、5 分钟或 30 分钟的趋势数据。");
         SetToolTip(_trendPauseCheck, "暂停图表刷新；后台轮询和环形缓冲区仍可继续采样。");

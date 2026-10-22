@@ -567,20 +567,27 @@ public sealed partial class MainForm
 
     private void OnPollingSample(PollingSampleEventArgs args)
     {
+        bool added = false;
+        bool followBottom = UiHelpers.IsGridAtBottom(_liveValueGrid);
         if (!_liveRows.TryGetValue(args.Task.Id, out DataGridViewRow? row))
         {
             int index = _liveValueGrid.Rows.Add();
             row = _liveValueGrid.Rows[index];
             row.Tag = args.Task.Id;
             _liveRows[args.Task.Id] = row;
+            added = true;
         }
 
         row.Cells[1].Value = args.Timestamp.ToString(
-            "yyyy-MM-dd HH:mm:ss.fff",
+            "【yyyy-MM-dd HH:mm:ss.fff】",
             CultureInfo.InvariantCulture);
         row.Cells[2].Value = args.ParsedValue;
         row.Cells[3].Value = args.ElapsedMilliseconds;
         row.Cells[0].Value = args.Task.Name;
+        if (added)
+        {
+            UiHelpers.ScrollGridToBottom(_liveValueGrid, followBottom);
+        }
     }
 
     private void UpdatePollingAddressDisplays()

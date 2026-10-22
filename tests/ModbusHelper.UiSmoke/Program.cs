@@ -209,7 +209,7 @@ internal static class Program
         string manualSlaveResult = GetField<TextBox>(form, "_slaveManualResultBox").Text;
         if (!manualSlaveResult.Contains("协议地址：0", StringComparison.Ordinal)
             || !manualSlaveResult.Contains("0x002A", StringComparison.Ordinal)
-            || !manualSlaveResult.Contains(" : 写入成功", StringComparison.Ordinal))
+            || !manualSlaveResult.Contains("】 写入成功", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"从站手动模拟未写入 1 基地址 40001 对应的协议地址 0：{manualSlaveResult}");
@@ -267,14 +267,16 @@ internal static class Program
                 + $"{Environment.NewLine}从站历史：{failedReadFrames}");
         }
 
-        if (!request.Text.Contains(" : ", StringComparison.Ordinal))
+        if (!request.Text.Contains("】 ", StringComparison.Ordinal)
+            || request.SelectionStart != request.TextLength)
         {
-            throw new InvalidOperationException("请求历史未按“时间戳：十六进制报文”格式显示。");
+            throw new InvalidOperationException("请求历史未按“【时间】十六进制报文”格式显示，或没有自动跟随底部。");
         }
 
-        if (!response.Text.Contains(" : ", StringComparison.Ordinal))
+        if (!response.Text.Contains("】 ", StringComparison.Ordinal)
+            || response.SelectionStart != response.TextLength)
         {
-            throw new InvalidOperationException("响应历史未按“时间戳：十六进制报文”格式显示。");
+            throw new InvalidOperationException("响应历史未按“【时间】十六进制报文”格式显示，或没有自动跟随底部。");
         }
 
         BindingList<PollingTaskConfiguration> tasks = GetField<
@@ -363,12 +365,12 @@ internal static class Program
         tabs.SelectedIndex = 2;
         Pump(TimeSpan.FromMilliseconds(350));
         string slaveFrameHistory = GetField<TextBox>(form, "_slaveFrameBox").Text;
-        if (!slaveFrameHistory.Contains(" : 接收请求", StringComparison.Ordinal)
-            || !slaveFrameHistory.Contains(" : 发送响应", StringComparison.Ordinal)
+        if (!slaveFrameHistory.Contains("】 接收请求", StringComparison.Ordinal)
+            || !slaveFrameHistory.Contains("】 发送响应", StringComparison.Ordinal)
             || !slaveFrameHistory.Contains(" | ", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                $"从站报文历史未显示带时间戳的收发记录：{slaveFrameHistory}");
+                $"从站报文历史未显示“【时间】方向 | 报文”格式：{slaveFrameHistory}");
         }
 
         SavePage(form, outputDirectory, "11-从站独立地址基准.png");
@@ -1145,22 +1147,25 @@ internal static class Program
         }
 
         read.PerformClick();
-        if (!result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
-                StringSplitOptions.None)[0].Contains("42 (0x002A)", StringComparison.Ordinal)
-            || !result.Text.Contains(" : 写入成功", StringComparison.Ordinal))
+        string latestReadEntry = result.Text.Split(
+                new[] { Environment.NewLine + Environment.NewLine },
+                StringSplitOptions.None)
+            .Last();
+        if (!latestReadEntry.Contains("42 (0x002A)", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("运行中手动模拟读写未生效，或读写历史被覆盖。");
         }
 
         GetField<TextBox>(form, "_slaveManualValuesInput").Text = "125";
         write.PerformClick();
-        if (!result.Text.StartsWith(
-                DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                StringComparison.Ordinal)
-            || !result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
-                StringSplitOptions.None)[0].Contains("125 (0x007D)", StringComparison.Ordinal))
+        string latestWriteEntry = result.Text.Split(
+                new[] { Environment.NewLine + Environment.NewLine },
+                StringSplitOptions.None)
+            .Last();
+        if (!latestWriteEntry.StartsWith('【')
+            || !latestWriteEntry.Contains("125 (0x007D)", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("运行中写入未即时生效或没有毫秒时间戳历史。");
+            throw new InvalidOperationException("运行中写入未即时生效或没有【时间】格式的历史。");
         }
 
         GetField<Button>(form, "_slaveStopButton").PerformClick();
@@ -1184,8 +1189,11 @@ internal static class Program
         }
 
         read.PerformClick();
-        if (!result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
-                StringSplitOptions.None)[0].Contains("100 (0x0064)", StringComparison.Ordinal))
+        if (!result.Text.Split(
+                new[] { Environment.NewLine + Environment.NewLine },
+                StringSplitOptions.None)
+                .Last()
+                .Contains("100 (0x0064)", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("从站重启后没有恢复初始表中的值 100。");
         }
@@ -1202,8 +1210,11 @@ internal static class Program
         }
 
         read.PerformClick();
-        if (!result.Text.Split(new[] { Environment.NewLine + Environment.NewLine },
-                StringSplitOptions.None)[0].Contains("100 (0x0064)", StringComparison.Ordinal))
+        if (!result.Text.Split(
+                new[] { Environment.NewLine + Environment.NewLine },
+                StringSplitOptions.None)
+                .Last()
+                .Contains("100 (0x0064)", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("从站切换地址基准后没有读取到同一个协议地址的数据。");
         }
@@ -1226,9 +1237,11 @@ internal static class Program
         string[] entries = result.Text.Split(
             new[] { Environment.NewLine + Environment.NewLine },
             StringSplitOptions.None);
-        if (entries.Length != 100 || entries.Any(entry => !entry.Contains(" : ", StringComparison.Ordinal)))
+        if (entries.Length != 100
+            || entries.Any(entry => !entry.Contains('【')
+                || !entry.Contains('】')))
         {
-            throw new InvalidOperationException("手动模拟结果历史未限制为最近 100 条带时间戳的记录。");
+            throw new InvalidOperationException("手动模拟结果历史未限制为最近 100 条【时间】记录。");
         }
 
         GetField<TextBox>(form, "_slaveManualValuesInput").Text = "42";

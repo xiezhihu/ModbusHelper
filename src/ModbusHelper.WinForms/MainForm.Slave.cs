@@ -1651,18 +1651,18 @@ public sealed partial class MainForm
 
     private void AppendSlaveManualHistory(string message)
     {
-        string entry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} : {message}";
-        _slaveManualHistory.AddFirst(entry);
+        bool followBottom = UiHelpers.IsTextBoxAtBottom(_slaveManualResultBox);
+        string entry = $"【{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}】 {message}";
+        _slaveManualHistory.AddLast(entry);
         while (_slaveManualHistory.Count > 100)
         {
-            _slaveManualHistory.RemoveLast();
+            _slaveManualHistory.RemoveFirst();
         }
 
         _slaveManualResultBox.Text = string.Join(
             Environment.NewLine + Environment.NewLine,
             _slaveManualHistory);
-        _slaveManualResultBox.SelectionStart = 0;
-        _slaveManualResultBox.SelectionLength = 0;
+        UiHelpers.ScrollTextBoxToEnd(_slaveManualResultBox, followBottom);
     }
 
     private static string FormatSlaveValues(object values)
@@ -1728,6 +1728,7 @@ public sealed partial class MainForm
         }
 
         _lastSlaveFrameRevision = revision;
+        bool followBottom = UiHelpers.IsTextBoxAtBottom(_slaveFrameBox);
         IReadOnlyList<ModbusLogRecord> records = _services.LogService.GetSnapshot(
             ModbusLogLevel.Debug,
             limit: 500,
@@ -1736,11 +1737,14 @@ public sealed partial class MainForm
             Environment.NewLine,
             records.Where(record => record.Role == ModbusRole.Slave)
                 .Take(200)
+                .Reverse()
                 .Select(FormatSlaveFrameHistoryLine));
         if (string.IsNullOrWhiteSpace(_slaveFrameBox.Text))
         {
             _slaveFrameBox.Text = "暂无从站报文记录。";
         }
+
+        UiHelpers.ScrollTextBoxToEnd(_slaveFrameBox, followBottom);
     }
 
     private static string FormatSlaveFrameHistoryLine(ModbusLogRecord record)
@@ -1748,7 +1752,7 @@ public sealed partial class MainForm
         string direction = record.Direction == DataDirection.Rx
             ? "接收请求"
             : "发送响应";
-        return $"{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff} : {direction} | "
+        return $"【{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff}】 {direction} | "
                + $"{record.Hex} | {record.Meaning}";
     }
 

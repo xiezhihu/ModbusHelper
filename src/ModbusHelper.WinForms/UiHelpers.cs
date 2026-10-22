@@ -133,6 +133,78 @@ internal static class UiHelpers
         };
     }
 
+    /// <summary>
+    /// 判断多行文本框当前是否已经在末尾。用户主动滚到旧记录后，
+    /// 新记录不会强行夺回滚动位置。
+    /// </summary>
+    public static bool IsTextBoxAtBottom(TextBox textBox)
+    {
+        if (textBox.IsDisposed || textBox.TextLength == 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            Point lastCharacterPosition = textBox.GetPositionFromCharIndex(textBox.TextLength - 1);
+            int visibleHeight = textBox.ClientSize.Height;
+            if (textBox.ScrollBars is ScrollBars.Horizontal or ScrollBars.Both)
+            {
+                visibleHeight -= SystemInformation.HorizontalScrollBarHeight;
+            }
+
+            return lastCharacterPosition.Y + textBox.Font.Height <= visibleHeight + Scale(textBox, 2);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// 按调用前记录的底部状态滚动到最新内容。历史区域统一按时间正序追加，
+    /// 因此最新记录位于末尾；使用控件自身的滚动逻辑，不调用逐条 Invoke。
+    /// </summary>
+    public static void ScrollTextBoxToEnd(TextBox textBox, bool followBottom = true)
+    {
+        if (textBox.IsDisposed || !followBottom)
+        {
+            return;
+        }
+
+        textBox.SelectionStart = textBox.TextLength;
+        textBox.SelectionLength = 0;
+        textBox.ScrollToCaret();
+    }
+
+    /// <summary>
+    /// 判断数据表当前是否已经显示最后一行。
+    /// </summary>
+    public static bool IsGridAtBottom(DataGridView grid)
+    {
+        return grid.IsDisposed
+            || grid.Rows.Count == 0
+            || grid.FirstDisplayedScrollingRowIndex < 0
+            || grid.FirstDisplayedScrollingRowIndex + grid.DisplayedRowCount(false) >= grid.Rows.Count;
+    }
+
+    /// <summary>
+    /// 按调用前记录的底部状态滚动到最后一行，适用于动态追加的最近值表。
+    /// </summary>
+    public static void ScrollGridToBottom(DataGridView grid, bool followBottom = true)
+    {
+        if (grid.IsDisposed || grid.Rows.Count == 0 || !followBottom)
+        {
+            return;
+        }
+
+        int lastRowIndex = grid.Rows.Count - 1;
+        if (grid.Rows[lastRowIndex].Visible)
+        {
+            grid.FirstDisplayedScrollingRowIndex = lastRowIndex;
+        }
+    }
+
     public static NumericUpDown CreateNumber(decimal minimum, decimal maximum, decimal value)
     {
         return new NumericUpDown

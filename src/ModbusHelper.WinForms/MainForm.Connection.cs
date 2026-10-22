@@ -338,9 +338,9 @@ public sealed partial class MainForm
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
 
-        GroupBox requestGroup = UiHelpers.CreateGroup("请求历史（时间戳：十六进制）");
+        GroupBox requestGroup = UiHelpers.CreateGroup("请求历史（【时间】十六进制）");
         requestGroup.Controls.Add(_requestHexBox);
-        GroupBox responseGroup = UiHelpers.CreateGroup("响应历史（时间戳：十六进制）");
+        GroupBox responseGroup = UiHelpers.CreateGroup("响应历史（【时间】十六进制）");
         responseGroup.Controls.Add(_responseHexBox);
         GroupBox parsedGroup = UiHelpers.CreateGroup("解析结果");
         parsedGroup.Controls.Add(_parsedValueBox);
@@ -384,6 +384,8 @@ public sealed partial class MainForm
         }
 
         _lastRequestHistoryRevision = revision;
+        bool followRequestBottom = UiHelpers.IsTextBoxAtBottom(_requestHexBox);
+        bool followResponseBottom = UiHelpers.IsTextBoxAtBottom(_responseHexBox);
         IReadOnlyList<ModbusLogRecord> records = _services.LogService.GetSnapshot(
             limit: 5000,
             newestFirst: true);
@@ -393,7 +395,7 @@ public sealed partial class MainForm
             .Take(200)
             .Reverse()
             .Select(record =>
-                $"{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff} : {record.Hex}")
+                $"【{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff}】 {record.Hex}")
             .ToArray();
 
         string[] responseLines = records
@@ -402,7 +404,7 @@ public sealed partial class MainForm
             .Take(200)
             .Reverse()
             .Select(record =>
-                $"{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff} : {record.Hex}")
+                $"【{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff}】 {record.Hex}")
             .ToArray();
 
         _requestHexBox.Text = string.Join(Environment.NewLine, requestLines);
@@ -410,11 +412,9 @@ public sealed partial class MainForm
             ? string.Join(Environment.NewLine, responseLines)
             : string.IsNullOrWhiteSpace(responseFallback)
                 ? string.Empty
-                : $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} : {responseFallback}";
-        _requestHexBox.SelectionStart = 0;
-        _requestHexBox.SelectionLength = 0;
-        _responseHexBox.SelectionStart = 0;
-        _responseHexBox.SelectionLength = 0;
+                : $"【{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff}】 {responseFallback}";
+        UiHelpers.ScrollTextBoxToEnd(_requestHexBox, followRequestBottom);
+        UiHelpers.ScrollTextBoxToEnd(_responseHexBox, followResponseBottom);
     }
 
     private static TableLayoutPanel AddUnit(Control input, string unit)
