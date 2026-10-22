@@ -266,7 +266,6 @@ public sealed partial class MainForm : Form
         SetGridToolTip(_pollingGrid, "数据类型", "将寄存器原始值解析为 Int16、UInt32、Float、字符串等类型。");
         SetGridToolTip(_pollingGrid, "字节序", "ABCD、CDAB、BADC、DCBA 四种寄存器与字节排列方式。");
         SetGridToolTip(_pollingGrid, "趋势", "勾选后将任务采样结果写入趋势数据缓冲区。");
-        SetGridToolTip(_pollingGrid, "显示", "控制该任务曲线是否在趋势图中显示。");
         SetGridToolTip(_pollingGrid, "运行", "当前任务是否正在由轮询调度器执行。");
 
         SetToolTip(_slaveTypeCombo, "选择 RTU 串口从站或 TCP 网络从站。");

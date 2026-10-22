@@ -84,6 +84,13 @@ public sealed partial class MainForm
         _pollingGrid.CellFormatting += OnPollingGridCellFormatting;
         _pollingGrid.CellParsing += OnPollingGridCellParsing;
         _pollingGrid.CellValueChanged += OnPollingGridCellValueChanged;
+        _pollingGrid.CurrentCellDirtyStateChanged += (_, _) =>
+        {
+            if (_pollingGrid.IsCurrentCellDirty)
+            {
+                _pollingGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            }
+        };
         _pollingGrid.EditingControlShowing += OnPollingGridEditingControlShowing;
         _pollingGrid.DataError += (_, args) =>
         {
@@ -211,15 +218,6 @@ public sealed partial class MainForm
         {
             DataPropertyName = nameof(PollingTaskConfiguration.ShowInTrend),
             HeaderText = "趋势",
-            Width = 58,
-            MinimumWidth = 54,
-            ValueType = typeof(bool),
-            SortMode = DataGridViewColumnSortMode.NotSortable
-        });
-        _pollingGrid.Columns.Add(new DataGridViewCheckBoxColumn
-        {
-            DataPropertyName = nameof(PollingTaskConfiguration.TrendVisible),
-            HeaderText = "显示",
             Width = 58,
             MinimumWidth = 54,
             ValueType = typeof(bool),
@@ -654,9 +652,26 @@ public sealed partial class MainForm
         object? sender,
         DataGridViewCellEventArgs e)
     {
-        if (e.ColumnIndex != 0
-            || e.RowIndex < 0
-            || _pollingGrid.Rows[e.RowIndex].DataBoundItem is not PollingTaskConfiguration task
+        if (e.RowIndex < 0
+            || _pollingGrid.Rows[e.RowIndex].DataBoundItem is not PollingTaskConfiguration task)
+        {
+            return;
+        }
+
+        string propertyName = _pollingGrid.Columns[e.ColumnIndex].DataPropertyName;
+        if (string.Equals(
+                propertyName,
+                nameof(PollingTaskConfiguration.ShowInTrend),
+                StringComparison.Ordinal))
+        {
+            RebuildTrendSeries();
+            return;
+        }
+
+        if (!string.Equals(
+                propertyName,
+                nameof(PollingTaskConfiguration.Enabled),
+                StringComparison.Ordinal)
             || task.Enabled
             || !task.IsRunning)
         {
