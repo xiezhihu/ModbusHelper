@@ -41,6 +41,7 @@ public sealed partial class MainForm
     private readonly Button _slaveGenerateRandomInitialButton =
         UiHelpers.CreateButton("生成随机初始值", () => { }, 112);
     private readonly Label _slaveStateLabel = UiHelpers.CreateLabel("已停止", true);
+    private readonly Label _slaveUnitValidationLabel = UiHelpers.CreateLabel(string.Empty);
     private readonly DataGridView _slaveUnitGrid = new();
     private readonly DataGridView _slaveRuleGrid = new();
     private readonly BindingList<SlaveUnitEditor> _slaveUnitEditors = new();
@@ -64,6 +65,7 @@ public sealed partial class MainForm
     private bool _slaveStartPending;
     private AddressBase _currentSlaveAddressBase;
     private bool _slaveAddressBaseInitializing;
+    private string _slaveUnitEditError = string.Empty;
     private long _lastSlaveFrameRevision = -1;
 
     private void InitializeSlavePage()
@@ -292,11 +294,12 @@ public sealed partial class MainForm
         TableLayoutPanel layout = new()
         {
             Dock = DockStyle.Fill,
-            RowCount = 2,
+            RowCount = 3,
             ColumnCount = 1,
             AutoSize = false
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         FlowLayoutPanel toolbar = new()
@@ -313,9 +316,13 @@ public sealed partial class MainForm
         toolbar.Controls.Add(_slaveRandomConfigButton);
         toolbar.Controls.Add(_slaveGenerateRandomInitialButton);
         layout.Controls.Add(toolbar, 0, 0);
+        _slaveUnitValidationLabel.Dock = DockStyle.Fill;
+        _slaveUnitValidationLabel.ForeColor = Color.DarkRed;
+        _slaveUnitValidationLabel.Visible = false;
+        layout.Controls.Add(_slaveUnitValidationLabel, 0, 1);
         ConfigureSlaveUnitGrid();
         _slaveUnitGrid.MinimumSize = new Size(0, UiHelpers.Scale(_slaveUnitGrid, 62));
-        layout.Controls.Add(_slaveUnitGrid, 0, 1);
+        layout.Controls.Add(_slaveUnitGrid, 0, 2);
         group.Controls.Add(layout);
         return group;
     }
@@ -333,8 +340,9 @@ public sealed partial class MainForm
         _slaveUnitGrid.CellFormatting += OnSlaveUnitGridCellFormatting;
         _slaveUnitGrid.CellToolTipTextNeeded += OnSlaveUnitGridCellToolTipTextNeeded;
         _slaveUnitGrid.CellDoubleClick += OnSlaveUnitGridCellDoubleClick;
-        _slaveUnitGrid.CellValidating += OnSlaveUnitGridCellValidating;
-        _slaveUnitGrid.CellEndEdit += (_, _) => ValidateConfiguredSlaveUnitIds(false);
+        _slaveUnitGrid.CellBeginEdit += (_, _) => _slaveUnitEditError = string.Empty;
+        _slaveUnitGrid.CellParsing += OnSlaveUnitGridCellParsing;
+        _slaveUnitGrid.CellEndEdit += OnSlaveUnitGridCellEndEdit;
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.UnitId),
             "从站地址",
@@ -735,12 +743,25 @@ public sealed partial class MainForm
 
     private void SetSlaveInitialDataLocked(bool locked)
     {
-        if (_slaveUnitGrid.IsCurrentCellInEditMode)
+        // 状态刷新不能强制提交用户正在输入的地址；仅在实际进入锁定状态时结束编辑。
+        if (_slaveUnitGrid.ReadOnly != locked)
         {
-            _slaveUnitGrid.EndEdit();
+            if (locked && !_slaveUnitGrid.EndEdit())
+            {
+                _slaveUnitGrid.CancelEdit();
+            }
+
+            _slaveUnitGrid.ReadOnly = locked;
+            if (!locked)
+            {
+                // 整表解除只读会重置列状态，必须恢复摘要列的只读约束。
+                foreach (DataGridViewColumn column in _slaveUnitGrid.Columns)
+                {
+                    column.ReadOnly = column.DataPropertyName != nameof(SlaveUnitEditor.UnitId);
+                }
+            }
         }
 
-        _slaveUnitGrid.ReadOnly = locked;
         _slaveAddUnitButton.Enabled = !locked;
         _slaveDeleteUnitButton.Enabled = !locked;
         _slaveEditInitialDataButton.Enabled = !locked;
@@ -757,41 +778,55 @@ public sealed partial class MainForm
         }
     }
 
-    private void OnSlaveUnitGridCellValidating(
+    private void OnSlaveUnitGridCellParsing(
         object? sender,
-        DataGridViewCellValidatingEventArgs e)
+        DataGridViewCellParsingEventArgs e)
     {
-        if (e.RowIndex < 0
-            || e.ColumnIndex < 0
-            || e.ColumnIndex != 0)
+        if (e.RowIndex < 0 || e.ColumnIndex != 0
+            || _slaveUnitGrid.Rows[e.RowIndex].DataBoundItem is not SlaveUnitEditor current)
         {
             return;
         }
 
         string text = Convert.ToString(
-            e.FormattedValue,
+            e.Value,
             CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+        string error = string.Empty;
         if (!byte.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out byte unitId)
             || unitId is < 1 or > 247)
         {
-            _slaveUnitGrid.Rows[e.RowIndex].ErrorText =
-                "从站地址必须是 1 至 247，且同一个监听端口内不能重复。";
-            e.Cancel = true;
-            return;
+            error = "从站地址必须是 1 至 247 的整数。";
         }
-
-        SlaveUnitEditor? current = _slaveUnitGrid.Rows[e.RowIndex].DataBoundItem as SlaveUnitEditor;
-        bool duplicated = _slaveUnitEditors.Any(
-            editor => !ReferenceEquals(editor, current) && editor.UnitId == unitId);
-        if (duplicated)
+        else if (_slaveUnitEditors.Any(
+                     editor => !ReferenceEquals(editor, current) && editor.UnitId == unitId))
         {
-            _slaveUnitGrid.Rows[e.RowIndex].ErrorText =
-                $"从站地址 {unitId} 已存在。一个监听端口内每个从站地址只能配置一行。";
-            e.Cancel = true;
-            return;
+            error = $"从站地址 {unitId} 已存在。";
         }
 
-        _slaveUnitGrid.Rows[e.RowIndex].ErrorText = string.Empty;
+        // 不取消 CellValidating：取消会把焦点困在无效单元格中，
+        // 后续页面切换或数据绑定刷新可能抛出“无法提交或取消单元格值更改”。
+        // 在解析边界拒绝无效输入，提交原有值，使导航、删除和关闭仍能正常完成。
+        _slaveUnitEditError = error.Length == 0
+            ? string.Empty
+            : $"{error} 本次修改未保存，仍保留从站地址 {current.UnitId}。";
+        e.Value = error.Length == 0 ? unitId : current.UnitId;
+        e.ParsingApplied = true;
+    }
+
+    private void OnSlaveUnitGridCellEndEdit(object? sender, DataGridViewCellEventArgs e)
+    {
+        ValidateConfiguredSlaveUnitIds(false);
+        if (_slaveUnitEditError.Length > 0)
+        {
+            _slaveUnitGrid.Rows[e.RowIndex].Cells[e.ColumnIndex].ErrorText = _slaveUnitEditError;
+            ShowSlaveUnitValidation(_slaveUnitEditError);
+        }
+    }
+
+    private void ShowSlaveUnitValidation(string message)
+    {
+        _slaveUnitValidationLabel.Text = message;
+        _slaveUnitValidationLabel.Visible = message.Length > 0;
     }
 
     private bool ValidateConfiguredSlaveUnitIds(bool showMessage = true)
@@ -812,6 +847,7 @@ public sealed partial class MainForm
         foreach (DataGridViewRow row in _slaveUnitGrid.Rows)
         {
             row.ErrorText = string.Empty;
+            row.Cells[0].ErrorText = string.Empty;
         }
 
         List<byte> duplicateIds = rowsById
@@ -827,6 +863,8 @@ public sealed partial class MainForm
                 {
                     _slaveUnitGrid.Rows[rowIndex].ErrorText =
                         $"从站地址 {duplicateId} 重复。请修改或删除其中一行。";
+                    _slaveUnitGrid.Rows[rowIndex].Cells[0].ErrorText =
+                        _slaveUnitGrid.Rows[rowIndex].ErrorText;
                 }
             }
         }
@@ -835,12 +873,14 @@ public sealed partial class MainForm
             editor => editor.UnitId is < 1 or > 247);
         if (duplicateIds.Count == 0 && !invalidId)
         {
+            ShowSlaveUnitValidation(string.Empty);
             return true;
         }
 
         string message = duplicateIds.Count > 0
             ? $"从站地址 {string.Join("、", duplicateIds)} 重复。一个监听端口内每个从站地址只能配置一行。"
             : "从站地址必须在 1 至 247 范围内。";
+        ShowSlaveUnitValidation(message);
         if (showMessage)
         {
             MessageBox.Show(
@@ -936,6 +976,11 @@ public sealed partial class MainForm
 
     private void AddSlaveUnit()
     {
+        if (!_slaveUnitGrid.EndEdit())
+        {
+            return;
+        }
+
         HashSet<byte> configuredIds = _slaveUnitEditors
             .Select(editor => editor.UnitId)
             .ToHashSet();
@@ -969,16 +1014,20 @@ public sealed partial class MainForm
             Coils = $"{coilAddress} = OFF"
         });
         _slaveManualUnitInput.Value = nextId;
+        ValidateConfiguredSlaveUnitIds(false);
     }
 
     private void DeleteSlaveUnit()
     {
+        // 删除行无需保留尚未提交的输入，先取消编辑再通知绑定列表移除数据。
+        _slaveUnitGrid.CancelEdit();
         if (_slaveUnitGrid.CurrentRow?.DataBoundItem is SlaveUnitEditor editor)
         {
             _slaveUnitEditors.Remove(editor);
             _slaveManualUnitInput.Value = _slaveUnitEditors.Count == 0
                 ? 1
                 : _slaveUnitEditors[0].UnitId;
+            ValidateConfiguredSlaveUnitIds(false);
         }
     }
 

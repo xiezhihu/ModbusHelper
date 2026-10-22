@@ -30,6 +30,7 @@ internal static class Program
             $"modbus-helper-ui-smoke-{Guid.NewGuid():N}.db");
         Environment.SetEnvironmentVariable("MODBUSHELPER_DATABASE_PATH", testConfigurationPath);
         ApplicationConfiguration.Initialize();
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         Assembly assembly = Assembly.Load("ModbusHelper.WinForms");
         Type compositionRoot = assembly.GetType(
             "ModbusHelper.WinForms.AppCompositionRoot",
@@ -110,7 +111,7 @@ internal static class Program
         int port = 0;
         tabs.SelectedIndex = 2;
         CheckIndependentSlaveAddressBases(form);
-        CheckDuplicateSlaveUnitIds(form);
+        CheckDuplicateSlaveUnitIds(form, outputDirectory);
         CheckSlaveInitialDataEditor(form, outputDirectory);
         if (useRtu)
         {
@@ -583,7 +584,7 @@ internal static class Program
         Console.WriteLine("已验证：1000 行初始值、四区明细、小窗口、多选删除、末次输入、无效值拒绝、取消和主表回填。");
     }
 
-    private static void CheckDuplicateSlaveUnitIds(Form form)
+    private static void CheckDuplicateSlaveUnitIds(Form form, string outputDirectory)
     {
         DataGridView grid = GetField<DataGridView>(form, "_slaveUnitGrid");
         if (grid.Rows.Count < 2)
@@ -598,6 +599,81 @@ internal static class Program
 
         byte firstId = Convert.ToByte(grid.Rows[0].Cells[0].Value, CultureInfo.InvariantCulture);
         DataGridViewCell cell = grid.Rows[1].Cells[0];
+        byte previousId = Convert.ToByte(cell.Value, CultureInfo.InvariantCulture);
+        Label feedback = GetField<Label>(form, "_slaveUnitValidationLabel");
+        foreach (string text in new[]
+                 {
+                     firstId.ToString(CultureInfo.InvariantCulture), "0", "248", "256", "无效地址", string.Empty
+                 })
+        {
+            BeginSlaveUnitAddressEdit(grid, 1, text);
+            if (!grid.EndEdit()
+                || Convert.ToByte(cell.Value, CultureInfo.InvariantCulture) != previousId
+                || !feedback.Visible
+                || !feedback.Text.Contains("本次修改未保存", StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(cell.ErrorText))
+            {
+                throw new InvalidOperationException(
+                    $"无效从站地址“{text}”应保留原地址并显示提示，且不能阻止结束编辑。");
+            }
+        }
+
+        CheckLayoutCore(form);
+        SavePage(form, outputDirectory, "15-从站地址输入校验.png");
+        GetField<TabControl>(form, "_mainTabs").SelectedIndex = 0;
+        Pump(TimeSpan.FromMilliseconds(150));
+        GetField<TabControl>(form, "_mainTabs").SelectedIndex = 2;
+        grid.CurrentCell = grid.Rows[0].Cells[0];
+
+        BeginSlaveUnitAddressEdit(grid, 1, "3");
+        grid.EndEdit();
+        if (feedback.Visible || Convert.ToByte(cell.Value, CultureInfo.InvariantCulture) != 3)
+        {
+            throw new InvalidOperationException("有效从站地址未保存，或修正后仍显示旧错误。");
+        }
+
+        BeginSlaveUnitAddressEdit(grid, 1, firstId.ToString(CultureInfo.InvariantCulture));
+        form.GetType().GetMethod("SetSlaveInitialDataLocked", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(form, new object[] { true });
+        if (!grid.ReadOnly || Convert.ToByte(cell.Value, CultureInfo.InvariantCulture) != 3)
+        {
+            throw new InvalidOperationException("结束无效输入并锁定表格时应保留原地址。");
+        }
+
+        form.GetType().GetMethod("SetSlaveInitialDataLocked", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(form, new object[] { false });
+        BeginSlaveUnitAddressEdit(grid, 1, firstId.ToString(CultureInfo.InvariantCulture));
+        grid.CancelEdit();
+        grid.CurrentCell = grid.Rows[0].Cells[0];
+        if (Convert.ToByte(cell.Value, CultureInfo.InvariantCulture) != 3)
+        {
+            throw new InvalidOperationException("取消地址编辑后应保留原值，且允许切换单元格。");
+        }
+
+        BeginSlaveUnitAddressEdit(grid, 1, "4");
+        form.GetType().GetMethod("UpdateSlaveControls", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(form, null);
+        if (!grid.IsCurrentCellInEditMode || Convert.ToByte(cell.Value, CultureInfo.InvariantCulture) != 3)
+        {
+            throw new InvalidOperationException("普通状态刷新不应打断正在输入的从站地址。");
+        }
+
+        GetField<Button>(form, "_slaveAddUnitButton").PerformClick();
+        if (grid.Rows.Count != 3
+            || Convert.ToByte(cell.Value, CultureInfo.InvariantCulture) != 4
+            || grid.Rows.Cast<DataGridViewRow>().Select(row => row.Cells[0].Value).Distinct().Count() != 3)
+        {
+            throw new InvalidOperationException("新增单元前应先提交当前地址，再分配未使用地址。");
+        }
+
+        BeginSlaveUnitAddressEdit(grid, 2, firstId.ToString(CultureInfo.InvariantCulture));
+        GetField<Button>(form, "_slaveDeleteUnitButton").PerformClick();
+        if (grid.Rows.Count != 2)
+        {
+            throw new InvalidOperationException("正在输入无效地址时应仍能删除当前单元。");
+        }
+
+        // 模拟旧配置中已有重复地址：允许导航、修改和删除，但启动校验必须拒绝。
         cell.Value = firstId;
         bool valid = (bool)form.GetType()
             .GetMethod("ValidateConfiguredSlaveUnitIds", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -607,7 +683,10 @@ internal static class Program
             throw new InvalidOperationException("重复从站地址应被拦截并显示错误。");
         }
 
-        grid.Rows[1].Cells[0].Value = 2;
+        grid.CurrentCell = cell;
+        grid.CurrentCell = grid.Rows[0].Cells[0];
+        BeginSlaveUnitAddressEdit(grid, 1, "2");
+        grid.EndEdit();
         valid = (bool)form.GetType()
             .GetMethod("ValidateConfiguredSlaveUnitIds", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(form, new object[] { false })!;
@@ -619,7 +698,20 @@ internal static class Program
         }
 
         GetField<NumericUpDown>(form, "_slaveManualUnitInput").Value = firstId;
-        Console.WriteLine("已验证：同一监听端口内从站地址不能重复。");
+        Console.WriteLine("已验证：重复及非法地址保留原值，页面切换、取消、锁定、新增、删除和旧配置修正均正常。");
+    }
+
+    private static void BeginSlaveUnitAddressEdit(DataGridView grid, int rowIndex, string text)
+    {
+        grid.Focus();
+        grid.CurrentCell = grid.Rows[rowIndex].Cells[0];
+        if (!grid.BeginEdit(true) || grid.EditingControl is not TextBox addressEditor)
+        {
+            throw new InvalidOperationException("无法通过实际编辑控件输入从站地址。");
+        }
+
+        addressEditor.Text = text;
+        grid.NotifyCurrentCellDirty(true);
     }
 
     private static void CheckSlaveInitialDataValidation(Form owner, SlaveUnitConfiguration source)
@@ -708,7 +800,10 @@ internal static class Program
             || units.Columns[0].ReadOnly
             || units.Columns.Cast<DataGridViewColumn>().Skip(1).Any(column => !column.ReadOnly))
         {
-            throw new InvalidOperationException("主表应显示紧凑数量摘要，初始值必须在明细窗口编辑。");
+            throw new InvalidOperationException(
+                $"主表应显示紧凑数量摘要，初始值必须在明细窗口编辑。"
+                + $"摘要：{units.Rows[0].Cells[1].FormattedValue}，整表只读：{units.ReadOnly}，"
+                + $"各列只读：{string.Join(",", units.Columns.Cast<DataGridViewColumn>().Select(column => column.ReadOnly))}");
         }
 
         SavePage(owner, outputDirectory, "14-初始数据摘要.png");
@@ -839,9 +934,16 @@ internal static class Program
             throw new InvalidOperationException("重新打开程序后主从基准应分别恢复，且不能自动启动连接或从站。");
         }
 
+        GetField<TabControl>(restored, "_mainTabs").SelectedIndex = 2;
+        BeginSlaveUnitAddressEdit(GetField<DataGridView>(restored, "_slaveUnitGrid"), 0, "无效地址");
         restored.Close();
         Pump(TimeSpan.FromSeconds(2));
-        Console.WriteLine("已验证：主站 0 基和从站 1 基分别持久化，重启不自动连接。");
+        if (!restored.IsDisposed)
+        {
+            throw new InvalidOperationException("存在无效地址草稿时仍应能正常关闭并释放窗体。");
+        }
+
+        Console.WriteLine("已验证：主从基准分别持久化、重启不自动连接、无效地址草稿不阻止关闭。");
     }
 
     private static void RenderByteOrderProbe(string outputDirectory)
