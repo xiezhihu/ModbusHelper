@@ -5,8 +5,10 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 
+using ModbusHelper.Business.Logging;
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
+using ModbusHelper.Core.Models;
 
 namespace ModbusHelper.UiSmoke;
 
@@ -279,6 +281,8 @@ internal static class Program
             throw new InvalidOperationException("响应历史未按“【时间】十六进制报文”格式显示，或没有自动跟随底部。");
         }
 
+        CheckHistoryScrollPreservation(form, execute, request);
+
         BindingList<PollingTaskConfiguration> tasks = GetField<
             BindingList<PollingTaskConfiguration>>(form, "_pollingTaskBindings");
         if (tasks.Count > 0)
@@ -376,6 +380,70 @@ internal static class Program
         SavePage(form, outputDirectory, "11-从站独立地址基准.png");
         RenderByteOrderProbe(outputDirectory);
         RenderPointTable(outputDirectory);
+    }
+
+    private static void CheckHistoryScrollPreservation(
+        Form form,
+        Button execute,
+        TextBox request)
+    {
+        object services = GetField<object>(form, "_services");
+        ModbusLogService logService = services.GetType().GetProperty("LogService") is { } logProperty
+            ? (ModbusLogService)logProperty.GetValue(services)!
+            : throw new InvalidOperationException("未找到报文日志服务。");
+        for (int index = 0; index < 90; index++)
+        {
+            logService.AddFrame(new RawFrameRecord(
+                DateTimeOffset.Now.AddMilliseconds(index),
+                ModbusRole.Master,
+                DataDirection.Tx,
+                "01 03 00 00 00 01 84 0A",
+                "滚动位置回归测试请求",
+                null));
+        }
+
+        PumpUntil(
+            () => request.Lines.Length >= 60,
+            TimeSpan.FromSeconds(5));
+        if (request.Lines.Length < 60)
+        {
+            throw new InvalidOperationException("滚动位置回归测试未生成足够的请求历史。");
+        }
+
+        int targetLine = Math.Min(30, request.Lines.Length - 1);
+        request.SelectionStart = request.GetFirstCharIndexFromLine(targetLine);
+        request.SelectionLength = 0;
+        request.ScrollToCaret();
+        Pump(TimeSpan.FromMilliseconds(100));
+        int beforeFirstLine = GetFirstVisibleLine(request);
+        int previousLength = request.TextLength;
+
+        logService.AddFrame(new RawFrameRecord(
+            DateTimeOffset.Now,
+            ModbusRole.Master,
+            DataDirection.Tx,
+            "01 03 00 00 00 01 84 0A",
+            "滚动位置回归测试请求",
+            null));
+        PumpUntil(
+            () => request.TextLength > previousLength,
+            TimeSpan.FromSeconds(3));
+        Pump(TimeSpan.FromMilliseconds(100));
+        int afterFirstLine = GetFirstVisibleLine(request);
+        if (beforeFirstLine < 10 || afterFirstLine < 10)
+        {
+            throw new InvalidOperationException(
+                $"用户查看旧请求历史时位置被重置到顶部：刷新前首行 {beforeFirstLine}，刷新后首行 {afterFirstLine}。");
+        }
+
+        Console.WriteLine(
+            $"已验证请求历史非底部刷新保持位置：刷新前首行 {beforeFirstLine}，刷新后首行 {afterFirstLine}。");
+    }
+
+    private static int GetFirstVisibleLine(TextBox textBox)
+    {
+        int charIndex = textBox.GetCharIndexFromPosition(new Point(1, 1));
+        return charIndex < 0 ? 0 : textBox.GetLineFromCharIndex(charIndex);
     }
 
     private static void CheckIndependentSlaveAddressBases(Form form)

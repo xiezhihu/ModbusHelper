@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 using ModbusHelper.Core.Enums;
 
 namespace ModbusHelper.WinForms;
@@ -29,6 +31,9 @@ internal sealed class UiOption<T>
 /// </summary>
 internal static class UiHelpers
 {
+    private const uint EmGetFirstVisibleLine = 0x00CE;
+    private const uint EmLineScroll = 0x00B6;
+
     /// <summary>
     /// 多行文本框刷新前的滚动状态。
     /// </summary>
@@ -177,23 +182,12 @@ internal static class UiHelpers
             return new TextBoxScrollState(true, 0);
         }
 
-        int firstVisibleLine = 0;
-        try
-        {
-            int charIndex = textBox.GetCharIndexFromPosition(new Point(1, 1));
-            if (charIndex >= 0)
-            {
-                firstVisibleLine = textBox.GetLineFromCharIndex(charIndex);
-            }
-        }
-        catch (ArgumentOutOfRangeException)
-        {
-            firstVisibleLine = 0;
-        }
+        int firstVisibleLine = GetFirstVisibleLine(textBox);
 
-        return new TextBoxScrollState(
+        TextBoxScrollState state = new(
             IsTextBoxAtBottom(textBox),
             firstVisibleLine);
+        return state;
     }
 
     /// <summary>
@@ -219,6 +213,51 @@ internal static class UiHelpers
         {
             int maxLine = Math.Max(0, textBox.Lines.Length - 1);
             int targetLine = Math.Clamp(state.FirstVisibleLine, 0, maxLine);
+            ScrollTextBoxToLine(textBox, targetLine);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // 文本框可能正在销毁或重新布局，无法恢复滚动位置时保持默认状态。
+        }
+    }
+
+    private static int GetFirstVisibleLine(TextBox textBox)
+    {
+        if (textBox.IsHandleCreated)
+        {
+            return SendMessage(
+                textBox.Handle,
+                EmGetFirstVisibleLine,
+                IntPtr.Zero,
+                IntPtr.Zero).ToInt32();
+        }
+
+        try
+        {
+            int charIndex = textBox.GetCharIndexFromPosition(new Point(1, 1));
+            return charIndex < 0 ? 0 : textBox.GetLineFromCharIndex(charIndex);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return 0;
+        }
+    }
+
+    private static void ScrollTextBoxToLine(TextBox textBox, int targetLine)
+    {
+        int currentLine = GetFirstVisibleLine(textBox);
+        int delta = targetLine - currentLine;
+        if (delta != 0 && textBox.IsHandleCreated)
+        {
+            SendMessage(
+                textBox.Handle,
+                EmLineScroll,
+                IntPtr.Zero,
+                new IntPtr(delta));
+        }
+
+        if (GetFirstVisibleLine(textBox) != targetLine)
+        {
             int charIndex = textBox.GetFirstCharIndexFromLine(targetLine);
             if (charIndex < 0)
             {
@@ -229,11 +268,14 @@ internal static class UiHelpers
             textBox.SelectionLength = 0;
             textBox.ScrollToCaret();
         }
-        catch (ArgumentOutOfRangeException)
-        {
-            // 文本框可能正在销毁或重新布局，无法恢复滚动位置时保持默认状态。
-        }
     }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(
+        IntPtr handle,
+        uint message,
+        IntPtr wParam,
+        IntPtr lParam);
 
     /// <summary>
     /// 按调用前记录的底部状态滚动到最新内容。历史区域统一按时间正序追加，
