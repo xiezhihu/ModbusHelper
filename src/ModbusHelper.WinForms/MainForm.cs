@@ -33,9 +33,28 @@ public sealed partial class MainForm : Form
     private readonly ToolStripStatusLabel _statusConnectionLabel = new();
     private readonly ToolStripStatusLabel _statusPollingLabel = new();
     private readonly ToolStripStatusLabel _statusStatisticsLabel = new();
+    private readonly CheckBox _toolTipsEnabledCheck = new()
+    {
+        Text = "悬停提示",
+        AutoSize = true,
+        Checked = true,
+        ForeColor = Color.White,
+        BackColor = Color.FromArgb(18, 56, 63),
+        Margin = new Padding(12, 2, 4, 2)
+    };
+    private readonly CheckBox _topMostCheck = new()
+    {
+        Text = "窗口置顶",
+        AutoSize = true,
+        Checked = false,
+        ForeColor = Color.White,
+        BackColor = Color.FromArgb(18, 56, 63),
+        Margin = new Padding(8, 2, 4, 2)
+    };
     private bool _closing;
     private bool _allowClose;
     private long _lastRequestHistoryRevision = -1;
+    private string _lastChartToolTipText = string.Empty;
 
     internal MainForm(AppServices services)
     {
@@ -65,6 +84,18 @@ public sealed partial class MainForm : Form
         FormClosing += OnMainFormClosing;
         FormClosed += OnMainFormFormClosed;
         FormClosed += (_, _) => _toolTip.Dispose();
+        _toolTipsEnabledCheck.CheckedChanged += (_, _) =>
+        {
+            _toolTip.Active = _toolTipsEnabledCheck.Checked;
+            if (!_toolTipsEnabledCheck.Checked)
+            {
+                _lastChartToolTipText = string.Empty;
+                _toolTip.SetToolTip(_trendChart, string.Empty);
+            }
+        };
+        _topMostCheck.CheckedChanged += (_, _) =>
+            TopMost = _topMostCheck.Checked;
+        _toolTip.Active = true;
     }
 
     private void InitializeShell()
@@ -95,12 +126,14 @@ public sealed partial class MainForm : Form
             Dock = DockStyle.Top,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
+            ColumnCount = 4,
             RowCount = 1,
             Margin = new Padding(0),
             Padding = new Padding(0)
         };
         headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
         TableLayoutPanel titleStack = new()
@@ -145,7 +178,9 @@ public sealed partial class MainForm : Form
         _headerStatusLabel.Text = "未连接";
         _headerStatusLabel.Margin = new Padding(18, 0, 0, 0);
         headerLayout.Controls.Add(titleStack, 0, 0);
-        headerLayout.Controls.Add(_headerStatusLabel, 1, 0);
+        headerLayout.Controls.Add(_toolTipsEnabledCheck, 1, 0);
+        headerLayout.Controls.Add(_topMostCheck, 2, 0);
+        headerLayout.Controls.Add(_headerStatusLabel, 3, 0);
         header.Controls.Add(headerLayout);
 
         _mainTabs.Dock = DockStyle.Fill;
@@ -275,7 +310,8 @@ public sealed partial class MainForm : Form
         SetToolTip(_trendPauseCheck, "暂停图表刷新；后台轮询和环形缓冲区仍可继续采样。");
         SetToolTip(_trendCapacityInput, "每条曲线的环形缓冲区容量，超过后覆盖最旧采样点。");
         SetToolTip(_trendSeriesList, "勾选或取消勾选曲线，控制其在图表中的显示状态。");
-        SetToolTip(_trendChart, "鼠标移动到曲线上可查看对应时间点的采样值。");
+        SetToolTip(_toolTipsEnabledCheck, "控制主窗口内所有悬停提示；取消后不会显示控件和趋势图提示。");
+        SetToolTip(_topMostCheck, "让主窗口保持在其他窗口上方；再次取消即可恢复普通窗口层级。");
 
         SetToolTip(_logLevelCombo, "按 Debug、Info、Warn、Error 级别过滤日志。");
         SetToolTip(_logSearchInput, "按报文、解析含义或错误提示关键字筛选日志。");

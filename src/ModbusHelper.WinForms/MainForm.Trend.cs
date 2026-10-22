@@ -19,10 +19,11 @@ public sealed partial class MainForm
     private readonly NumericUpDown _trendCapacityInput =
         UiHelpers.CreateNumber(100, 100_000, 5000);
     private readonly CheckedListBox _trendSeriesList = new();
-    private readonly ToolTip _chartToolTip = new();
     private readonly Dictionary<string, long> _trendCursors =
         new(StringComparer.OrdinalIgnoreCase);
     private bool _rebuildingTrendSeries;
+    private Point _lastTrendMousePosition;
+    private long _lastTrendHitTestMilliseconds;
 
     private void InitializeTrendPage()
     {
@@ -166,7 +167,7 @@ public sealed partial class MainForm
                     XValueType = ChartValueType.DateTime,
                     YValueType = ChartValueType.Double,
                     IsVisibleInLegend = true,
-                    ToolTip = "#LEGENDTEXT\\n#VALX{HH:mm:ss.fff}\\n#VALY{G9}"
+                    ToolTip = string.Empty
                 };
                 series["PointWidth"] = "1";
                 _trendChart.Series.Add(series);
@@ -200,43 +201,58 @@ public sealed partial class MainForm
         area.AxisX.Maximum = now.LocalDateTime.ToOADate();
         area.AxisX.Minimum = cutoff.ToOADate();
 
-        foreach (Series chartSeries in _trendChart.Series)
+        _trendChart.SuspendLayout();
+        try
         {
-            TrendSeries? trendSeries = _services.TrendDataStore.Get(chartSeries.Name);
-            if (trendSeries is null)
+            foreach (Series chartSeries in _trendChart.Series)
             {
-                continue;
-            }
-
-            long cursor = _trendCursors.GetValueOrDefault(chartSeries.Name);
-            cursor = trendSeries.ReadAfter(cursor, out TrendSample[] samples);
-            _trendCursors[chartSeries.Name] = cursor;
-            chartSeries.Enabled = trendSeries.Visible;
-            if (!trendSeries.Visible)
-            {
-                continue;
-            }
-
-            foreach (TrendSample sample in samples)
-            {
-                if (!double.IsFinite(sample.Value)
-                    || sample.Timestamp.LocalDateTime < cutoff)
+                TrendSeries? trendSeries = _services.TrendDataStore.Get(chartSeries.Name);
+                if (trendSeries is null)
                 {
                     continue;
                 }
 
-                int pointIndex = chartSeries.Points.AddXY(
-                    sample.Timestamp.LocalDateTime.ToOADate(),
-                    sample.Value);
-                chartSeries.Points[pointIndex].ToolTip =
-                    $"{trendSeries.Name}\\n{sample.Timestamp.LocalDateTime:HH:mm:ss.fff}\\n{sample.DisplayValue}";
-            }
+                long cursor = _trendCursors.GetValueOrDefault(chartSeries.Name);
+                cursor = trendSeries.ReadAfter(cursor, out TrendSample[] samples);
+                _trendCursors[chartSeries.Name] = cursor;
+                chartSeries.Enabled = trendSeries.Visible;
+                if (!trendSeries.Visible)
+                {
+                    continue;
+                }
 
-            while (chartSeries.Points.Count > 0
-                   && chartSeries.Points[0].XValue < area.AxisX.Minimum)
-            {
-                chartSeries.Points.RemoveAt(0);
+                chartSeries.Points.SuspendUpdates();
+                try
+                {
+                    foreach (TrendSample sample in samples)
+                    {
+                        if (!double.IsFinite(sample.Value)
+                            || sample.Timestamp.LocalDateTime < cutoff)
+                        {
+                            continue;
+                        }
+
+                        chartSeries.Points.AddXY(
+                            sample.Timestamp.LocalDateTime.ToOADate(),
+                            sample.Value);
+                    }
+
+                    while (chartSeries.Points.Count > 0
+                           && (chartSeries.Points[0].XValue < area.AxisX.Minimum
+                               || chartSeries.Points.Count > _trendCapacityInput.Value))
+                    {
+                        chartSeries.Points.RemoveAt(0);
+                    }
+                }
+                finally
+                {
+                    chartSeries.Points.ResumeUpdates();
+                }
             }
+        }
+        finally
+        {
+            _trendChart.ResumeLayout(false);
         }
     }
 
@@ -265,14 +281,33 @@ public sealed partial class MainForm
 
     private void OnTrendChartMouseMove(object? sender, MouseEventArgs e)
     {
+        long nowMilliseconds = Environment.TickCount64;
+        if (e.Location == _lastTrendMousePosition
+            || nowMilliseconds - _lastTrendHitTestMilliseconds < 40)
+        {
+            return;
+        }
+
+        _lastTrendMousePosition = e.Location;
+        _lastTrendHitTestMilliseconds = nowMilliseconds;
         HitTestResult? hit = _trendChart
             .HitTest(e.X, e.Y, false, ChartElementType.DataPoint)
             .FirstOrDefault();
         if (hit?.Object is DataPoint point && hit.Series is not null)
         {
-            _chartToolTip.SetToolTip(
-                _trendChart,
-                $"{hit.Series.LegendText}\\n{DateTime.FromOADate(point.XValue):HH:mm:ss.fff}\\n{point.YValues[0]:G9}");
+            string text = $"任务：{hit.Series.LegendText}{Environment.NewLine}"
+                + $"时间：{DateTime.FromOADate(point.XValue):HH:mm:ss.fff}{Environment.NewLine}"
+                + $"数值：{point.YValues[0]:G9}";
+            if (!string.Equals(text, _lastChartToolTipText, StringComparison.Ordinal))
+            {
+                _lastChartToolTipText = text;
+                _toolTip.SetToolTip(_trendChart, text);
+            }
+        }
+        else if (_lastChartToolTipText.Length > 0)
+        {
+            _lastChartToolTipText = string.Empty;
+            _toolTip.SetToolTip(_trendChart, string.Empty);
         }
     }
 
