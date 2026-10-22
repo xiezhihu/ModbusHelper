@@ -384,8 +384,10 @@ public sealed partial class MainForm
         }
 
         _lastRequestHistoryRevision = revision;
-        bool followRequestBottom = UiHelpers.IsTextBoxAtBottom(_requestHexBox);
-        bool followResponseBottom = UiHelpers.IsTextBoxAtBottom(_responseHexBox);
+        UiHelpers.TextBoxScrollState requestScrollState =
+            UiHelpers.CaptureTextBoxScrollState(_requestHexBox);
+        UiHelpers.TextBoxScrollState responseScrollState =
+            UiHelpers.CaptureTextBoxScrollState(_responseHexBox);
         IReadOnlyList<ModbusLogRecord> records = _services.LogService.GetSnapshot(
             limit: 5000,
             newestFirst: true);
@@ -413,8 +415,8 @@ public sealed partial class MainForm
             : string.IsNullOrWhiteSpace(responseFallback)
                 ? string.Empty
                 : $"【{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff}】 {responseFallback}";
-        UiHelpers.ScrollTextBoxToEnd(_requestHexBox, followRequestBottom);
-        UiHelpers.ScrollTextBoxToEnd(_responseHexBox, followResponseBottom);
+        UiHelpers.RestoreTextBoxScroll(_requestHexBox, requestScrollState);
+        UiHelpers.RestoreTextBoxScroll(_responseHexBox, responseScrollState);
     }
 
     private static TableLayoutPanel AddUnit(Control input, string unit)

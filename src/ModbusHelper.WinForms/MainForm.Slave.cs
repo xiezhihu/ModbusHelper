@@ -1651,7 +1651,8 @@ public sealed partial class MainForm
 
     private void AppendSlaveManualHistory(string message)
     {
-        bool followBottom = UiHelpers.IsTextBoxAtBottom(_slaveManualResultBox);
+        UiHelpers.TextBoxScrollState scrollState =
+            UiHelpers.CaptureTextBoxScrollState(_slaveManualResultBox);
         string entry = $"【{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}】 {message}";
         _slaveManualHistory.AddLast(entry);
         while (_slaveManualHistory.Count > 100)
@@ -1662,7 +1663,7 @@ public sealed partial class MainForm
         _slaveManualResultBox.Text = string.Join(
             Environment.NewLine + Environment.NewLine,
             _slaveManualHistory);
-        UiHelpers.ScrollTextBoxToEnd(_slaveManualResultBox, followBottom);
+        UiHelpers.RestoreTextBoxScroll(_slaveManualResultBox, scrollState);
     }
 
     private static string FormatSlaveValues(object values)
@@ -1728,7 +1729,8 @@ public sealed partial class MainForm
         }
 
         _lastSlaveFrameRevision = revision;
-        bool followBottom = UiHelpers.IsTextBoxAtBottom(_slaveFrameBox);
+        UiHelpers.TextBoxScrollState scrollState =
+            UiHelpers.CaptureTextBoxScrollState(_slaveFrameBox);
         IReadOnlyList<ModbusLogRecord> records = _services.LogService.GetSnapshot(
             ModbusLogLevel.Debug,
             limit: 500,
@@ -1744,7 +1746,7 @@ public sealed partial class MainForm
             _slaveFrameBox.Text = "暂无从站报文记录。";
         }
 
-        UiHelpers.ScrollTextBoxToEnd(_slaveFrameBox, followBottom);
+        UiHelpers.RestoreTextBoxScroll(_slaveFrameBox, scrollState);
     }
 
     private static string FormatSlaveFrameHistoryLine(ModbusLogRecord record)

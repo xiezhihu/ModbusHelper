@@ -30,6 +30,11 @@ internal sealed class UiOption<T>
 internal static class UiHelpers
 {
     /// <summary>
+    /// 多行文本框刷新前的滚动状态。
+    /// </summary>
+    public readonly record struct TextBoxScrollState(bool FollowBottom, int FirstVisibleLine);
+
+    /// <summary>
     /// 按当前控件的 DPI 将设计时像素换算为实际像素。
     /// </summary>
     public static int Scale(Control control, int logicalPixels)
@@ -158,6 +163,75 @@ internal static class UiHelpers
         catch (ArgumentOutOfRangeException)
         {
             return true;
+        }
+    }
+
+    /// <summary>
+    /// 保存多行文本框当前的滚动位置。除了是否跟随底部外，
+    /// 还记录顶部可见行，供刷新文本后恢复用户正在查看的旧记录。
+    /// </summary>
+    public static TextBoxScrollState CaptureTextBoxScrollState(TextBox textBox)
+    {
+        if (textBox.IsDisposed)
+        {
+            return new TextBoxScrollState(true, 0);
+        }
+
+        int firstVisibleLine = 0;
+        try
+        {
+            int charIndex = textBox.GetCharIndexFromPosition(new Point(1, 1));
+            if (charIndex >= 0)
+            {
+                firstVisibleLine = textBox.GetLineFromCharIndex(charIndex);
+            }
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            firstVisibleLine = 0;
+        }
+
+        return new TextBoxScrollState(
+            IsTextBoxAtBottom(textBox),
+            firstVisibleLine);
+    }
+
+    /// <summary>
+    /// 恢复多行文本框刷新前的滚动位置。用户原本在底部时滚到最新记录，
+    /// 否则恢复原先顶部可见行，避免刷新历史时跳到顶部或强行跟随到底部。
+    /// </summary>
+    public static void RestoreTextBoxScroll(
+        TextBox textBox,
+        TextBoxScrollState state)
+    {
+        if (textBox.IsDisposed)
+        {
+            return;
+        }
+
+        if (state.FollowBottom)
+        {
+            ScrollTextBoxToEnd(textBox);
+            return;
+        }
+
+        try
+        {
+            int maxLine = Math.Max(0, textBox.Lines.Length - 1);
+            int targetLine = Math.Clamp(state.FirstVisibleLine, 0, maxLine);
+            int charIndex = textBox.GetFirstCharIndexFromLine(targetLine);
+            if (charIndex < 0)
+            {
+                charIndex = 0;
+            }
+
+            textBox.SelectionStart = charIndex;
+            textBox.SelectionLength = 0;
+            textBox.ScrollToCaret();
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // 文本框可能正在销毁或重新布局，无法恢复滚动位置时保持默认状态。
         }
     }
 
