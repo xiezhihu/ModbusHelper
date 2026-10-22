@@ -245,7 +245,8 @@ public sealed partial class MainForm : Form
             "每一行是一个独立的模拟从站；表格中的“从站地址”就是 UnitID，必须与主站请求一致。"
             + "此表设置从站启动时的初始值；从站启动中和运行时表格会锁定，停止后才能编辑并在下次启动时加载。"
             + "列名中的 01/02/03/04 就是主站读取时对应的功能码。"
-            + "地址使用本页的从站地址基准；单元格填写“地址 = 值”，例如 1 基时为 40001 = 1234，0 基时为 0 = 1234；空白表示该区域没有预置值。");
+            + "地址使用本页的从站地址基准。多个地址仅显示数量，悬停可查看部分预览，"
+            + "双击或点击“编辑初始数据”后按地址逐行查看和编辑；“（空）”表示该区域没有预置值。");
         SetToolTip(
             _slaveRuleGrid,
             "规则只有在“启用”勾选且点击“应用规则”后才参与匹配。"
@@ -288,6 +289,11 @@ public sealed partial class MainForm : Form
         SetToolTip(_slaveStopButton, "停止从站监听并释放串口或 TCP 端口。");
         SetButtonToolTip(_slavePage, "新增单元", "添加一个独立 UnitID 的模拟从站单元。");
         SetButtonToolTip(_slavePage, "删除单元", "删除当前选中的模拟从站单元。");
+        SetButtonToolTip(
+            _slavePage,
+            "编辑初始数据",
+            "打开当前从站的明细编辑窗口；四个存储区分别按地址逐行显示，适合查看和编辑大量数据。"
+            + "也可以双击主表中的存储区单元格进入对应页签。");
         SetButtonToolTip(_slavePage, "随机数据配置", "配置多条随机数据规则，可选择启动时随机或运行中按周期随机。");
         SetButtonToolTip(_slavePage, "生成随机初始值", "按已勾选“启动时随机”的规则生成初始表数据；只能在从站停止时执行。");
         SetButtonToolTip(_slavePage, "新增规则", "新增一条异常注入规则。");

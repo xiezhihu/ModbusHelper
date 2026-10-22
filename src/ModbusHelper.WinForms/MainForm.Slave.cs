@@ -35,6 +35,8 @@ public sealed partial class MainForm
     private readonly Button _slaveStopButton = UiHelpers.CreateButton("停止从站", () => { }, 104);
     private readonly Button _slaveAddUnitButton = UiHelpers.CreateButton("新增单元", () => { }, 90);
     private readonly Button _slaveDeleteUnitButton = UiHelpers.CreateButton("删除单元", () => { }, 90);
+    private readonly Button _slaveEditInitialDataButton =
+        UiHelpers.CreateButton("编辑初始数据", () => { }, 120);
     private readonly Button _slaveRandomConfigButton = UiHelpers.CreateButton("随机数据配置", () => { }, 112);
     private readonly Button _slaveGenerateRandomInitialButton =
         UiHelpers.CreateButton("生成随机初始值", () => { }, 112);
@@ -161,6 +163,7 @@ public sealed partial class MainForm
         _slaveStopButton.Click += async (_, _) => await _services.SlaveSimulationManager.StopAsync();
         _slaveAddUnitButton.Click += (_, _) => AddSlaveUnit();
         _slaveDeleteUnitButton.Click += (_, _) => DeleteSlaveUnit();
+        _slaveEditInitialDataButton.Click += (_, _) => OpenSlaveInitialDataEditor();
         _slaveRandomConfigButton.Click += (_, _) => OpenSlaveRandomDataConfiguration();
         _slaveGenerateRandomInitialButton.Click += (_, _) => GenerateRandomInitialValues();
         UpdateSlaveTypeVisibility();
@@ -294,16 +297,19 @@ public sealed partial class MainForm
             AutoSize = false
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, UiHelpers.Scale(layout, 44)));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         FlowLayoutPanel toolbar = new()
         {
-            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Top,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false
+            WrapContents = true
         };
         toolbar.Controls.Add(_slaveAddUnitButton);
         toolbar.Controls.Add(_slaveDeleteUnitButton);
+        toolbar.Controls.Add(_slaveEditInitialDataButton);
         toolbar.Controls.Add(_slaveRandomConfigButton);
         toolbar.Controls.Add(_slaveGenerateRandomInitialButton);
         layout.Controls.Add(toolbar, 0, 0);
@@ -324,6 +330,9 @@ public sealed partial class MainForm
         _slaveUnitGrid.ShowCellToolTips = true;
         UiHelpers.ConfigureGridMetrics(_slaveUnitGrid);
         _slaveUnitGrid.DataSource = _slaveUnitEditors;
+        _slaveUnitGrid.CellFormatting += OnSlaveUnitGridCellFormatting;
+        _slaveUnitGrid.CellToolTipTextNeeded += OnSlaveUnitGridCellToolTipTextNeeded;
+        _slaveUnitGrid.CellDoubleClick += OnSlaveUnitGridCellDoubleClick;
         AddSlaveUnitColumn(
             nameof(SlaveUnitEditor.UnitId),
             "从站地址",
@@ -353,7 +362,8 @@ public sealed partial class MainForm
             DataPropertyName = propertyName,
             HeaderText = headerText,
             AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
-            MinimumWidth = UiHelpers.Scale(_slaveUnitGrid, 100)
+            MinimumWidth = UiHelpers.Scale(_slaveUnitGrid, 100),
+            ReadOnly = propertyName != nameof(SlaveUnitEditor.UnitId)
         };
         column.HeaderCell.ToolTipText = toolTip;
         if (propertyName == nameof(SlaveUnitEditor.UnitId))
@@ -726,6 +736,7 @@ public sealed partial class MainForm
         _slaveUnitGrid.ReadOnly = locked;
         _slaveAddUnitButton.Enabled = !locked;
         _slaveDeleteUnitButton.Enabled = !locked;
+        _slaveEditInitialDataButton.Enabled = !locked;
         _slaveRandomConfigButton.Enabled = !locked;
         _slaveGenerateRandomInitialButton.Enabled = !locked;
         if (_slaveUnitsGroup is not null)
@@ -1085,6 +1096,173 @@ public sealed partial class MainForm
             RandomizeOnStart = rule.RandomizeOnStart,
             RandomizeWhileRunning = rule.RandomizeWhileRunning
         };
+    }
+
+    private void OnSlaveUnitGridCellFormatting(
+        object? sender,
+        DataGridViewCellFormattingEventArgs e)
+    {
+        if (e.RowIndex < 0
+            || e.ColumnIndex < 1
+            || e.ColumnIndex > 4
+            || e.Value is not string text)
+        {
+            return;
+        }
+
+        e.Value = SummarizeSlaveInitialData(text);
+        e.FormattingApplied = true;
+    }
+
+    private void OnSlaveUnitGridCellToolTipTextNeeded(
+        object? sender,
+        DataGridViewCellToolTipTextNeededEventArgs e)
+    {
+        if (e.RowIndex < 0
+            || e.ColumnIndex < 1
+            || e.ColumnIndex > 4
+            || e.RowIndex >= _slaveUnitGrid.Rows.Count)
+        {
+            return;
+        }
+
+        string value = Convert.ToString(
+            _slaveUnitGrid.Rows[e.RowIndex].Cells[e.ColumnIndex].Value,
+            CultureInfo.InvariantCulture) ?? string.Empty;
+        const int maxPreviewLength = 240;
+        string preview = value.Length > maxPreviewLength
+            ? value[..maxPreviewLength] + "...（其余数据请在明细窗口查看）"
+            : value;
+        e.ToolTipText = string.IsNullOrWhiteSpace(value)
+            ? "暂无预置值。双击此单元格可按地址逐行编辑。"
+            : $"初始值预览：{preview}{Environment.NewLine}{Environment.NewLine}"
+              + "双击此单元格可打开明细编辑窗口。";
+    }
+
+    private void OnSlaveUnitGridCellDoubleClick(
+        object? sender,
+        DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.ColumnIndex < 1 || e.ColumnIndex > 4)
+        {
+            return;
+        }
+
+        OpenSlaveInitialDataEditor(GetSlaveAreaFromColumn(e.ColumnIndex));
+    }
+
+    private void OpenSlaveInitialDataEditor(SlaveArea? requestedArea = null)
+    {
+        if (_services.SlaveSimulationManager.IsListening || _slaveStartPending)
+        {
+            MessageBox.Show(
+                this,
+                "从站运行期间不能修改初始数据，请先停止从站。",
+                "编辑初始数据",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        if (_slaveUnitGrid.CurrentRow?.DataBoundItem is not SlaveUnitEditor editor)
+        {
+            MessageBox.Show(
+                this,
+                "请先选择要编辑的从站单元。",
+                "编辑初始数据",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        SlaveUnitConfiguration source;
+        try
+        {
+            if (!_slaveUnitGrid.EndEdit())
+            {
+                ShowSlaveError("请先修正当前从站地址。");
+                return;
+            }
+
+            source = editor.ToConfiguration(_currentSlaveAddressBase);
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            ShowSlaveError($"无法打开初始数据明细：{exception.Message}");
+            return;
+        }
+
+        using SlaveInitialDataForm dialog = new(
+            source,
+            _currentSlaveAddressBase,
+            requestedArea ?? GetSlaveAreaFromColumn(_slaveUnitGrid.CurrentCell?.ColumnIndex ?? 1));
+        if (dialog.ShowDialog(this) != DialogResult.OK
+            || dialog.UpdatedConfiguration is not SlaveUnitConfiguration updated)
+        {
+            return;
+        }
+
+        SlaveUnitEditor replacement = SlaveUnitEditor.FromConfiguration(
+            updated,
+            _currentSlaveAddressBase);
+        editor.HoldingRegisters = replacement.HoldingRegisters;
+        editor.InputRegisters = replacement.InputRegisters;
+        editor.Coils = replacement.Coils;
+        editor.DiscreteInputs = replacement.DiscreteInputs;
+        _slaveUnitEditors.ResetBindings();
+        _configuration.SlaveSimulator = BuildSlaveConfiguration();
+        _statusConnectionLabel.Text = $"已更新从站 {editor.UnitId} 的初始数据";
+        _statusConnectionLabel.ForeColor = Color.DarkGreen;
+    }
+
+    private static SlaveArea GetSlaveAreaFromColumn(int columnIndex)
+    {
+        return columnIndex switch
+        {
+            2 => SlaveArea.InputRegisters,
+            3 => SlaveArea.Coils,
+            4 => SlaveArea.DiscreteInputs,
+            _ => SlaveArea.HoldingRegisters
+        };
+    }
+
+    private static string SummarizeSlaveInitialData(string text)
+    {
+        // 摘要绘制不拆分完整大字符串，避免大量初始值在每次重绘时重复分配数组。
+        int count = 0;
+        bool inEntry = false;
+        foreach (char character in text)
+        {
+            if (character is ',' or ';' or '\r' or '\n')
+            {
+                inEntry = false;
+            }
+            else if (!char.IsWhiteSpace(character) && !inEntry)
+            {
+                count++;
+                inEntry = true;
+            }
+        }
+
+        if (count == 0)
+        {
+            return "（空）";
+        }
+
+        if (count == 1)
+        {
+            return TruncateSlaveSummary(text.Trim(SlaveMapEntrySeparators).Trim());
+        }
+
+        return $"共 {count} 项";
+    }
+
+    private static string TruncateSlaveSummary(string text)
+    {
+        const int maxLength = 18;
+        return text.Length <= maxLength
+            ? text
+            : text[..maxLength] + "...";
     }
 
     private void OnSlaveAddressBaseChanged()

@@ -110,6 +110,7 @@ internal static class Program
         int port = 0;
         tabs.SelectedIndex = 2;
         CheckIndependentSlaveAddressBases(form);
+        CheckSlaveInitialDataEditor(form, outputDirectory);
         if (useRtu)
         {
             SelectComboByText(GetField<ComboBox>(form, "_slaveTypeCombo"), "RTU");
@@ -146,9 +147,10 @@ internal static class Program
         if (!unitGrid.ReadOnly
             || GetField<Button>(form, "_slaveAddUnitButton").Enabled
             || GetField<Button>(form, "_slaveDeleteUnitButton").Enabled
+            || GetField<Button>(form, "_slaveEditInitialDataButton").Enabled
             || !slaveUnitsGroup.Text.Contains("已锁定", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("从站运行后，初始数据表及新增/删除单元操作必须锁定并显示原因。");
+            throw new InvalidOperationException("从站运行后，初始数据表及新增、删除、编辑操作必须锁定并显示原因。");
         }
 
         string[] expectedSlaveHeaders =
@@ -458,6 +460,328 @@ internal static class Program
         Console.WriteLine("已验证：主从独立地址基准、四区换算、规则编辑和无效初始值回滚。");
     }
 
+    private static void CheckSlaveInitialDataEditor(Form owner, string outputDirectory)
+    {
+        SlaveUnitConfiguration source = new()
+        {
+            UnitId = 7,
+            HoldingRegisters = Enumerable.Range(0, 1000)
+                .Select(index => new RegisterInitialValue { Address = (ushort)index, Value = (ushort)index })
+                .ToList(),
+            InputRegisters = Enumerable.Range(0, 125)
+                .Select(index => new RegisterInitialValue { Address = (ushort)index, Value = 10 })
+                .ToList(),
+            Coils = new List<CoilInitialValue> { new() { Address = 0, Value = true } },
+            DiscreteInputs = new List<CoilInitialValue> { new() { Address = 0, Value = false } },
+            ExceptionRules = new List<ExceptionInjectionRule>
+            {
+                new()
+                {
+                    Enabled = true,
+                    UnitId = 7,
+                    Function = ModbusFunction.ReadHoldingRegisters,
+                    StartAddress = 20,
+                    Count = 1,
+                    ExceptionCode = 2
+                }
+            }
+        };
+        using (Form dialog = CreateSlaveInitialDataEditor(source, AddressBase.OneBased, SlaveArea.InputRegisters))
+        {
+            dialog.Show(owner);
+            Pump(TimeSpan.FromMilliseconds(150));
+            TabControl tabs = GetField<TabControl>(dialog, "_areaTabs");
+            if (tabs.SelectedIndex != 1)
+            {
+                throw new InvalidOperationException("明细窗口未打开指定的输入寄存器页签。");
+            }
+
+            SlaveArea[] areas =
+            {
+                SlaveArea.HoldingRegisters, SlaveArea.InputRegisters, SlaveArea.Coils, SlaveArea.DiscreteInputs
+            };
+            int[] firstAddresses = { 40001, 30001, 1, 10001 };
+            for (int index = 0; index < areas.Length; index++)
+            {
+                tabs.SelectedIndex = index;
+                Pump(TimeSpan.FromMilliseconds(80));
+                DataGridView grid = GetInitialDataGrid(dialog, areas[index]);
+                if (Convert.ToInt32(grid.Rows[0].Cells[0].Value, CultureInfo.InvariantCulture) != firstAddresses[index]
+                    || !grid.MultiSelect)
+                {
+                    throw new InvalidOperationException("明细窗口未正确换算四区地址，或未启用多选。");
+                }
+
+                CheckLayoutCore(dialog);
+                AssertSlaveGridViewport(grid);
+                AssertInitialDataColumnsVisible(grid);
+            }
+
+            tabs.SelectedIndex = 0;
+            DataGridView holding = GetInitialDataGrid(dialog, SlaveArea.HoldingRegisters);
+            if (holding.Rows.Count != 1000)
+            {
+                throw new InvalidOperationException("大量初始数据未全部加载到明细表。");
+            }
+
+            SavePage(dialog, outputDirectory, "12-从站初始数据明细.png");
+            dialog.ClientSize = new Size(620, 440);
+            Pump(TimeSpan.FromMilliseconds(120));
+            CheckLayoutCore(dialog);
+            AssertSlaveGridViewport(holding);
+            AssertInitialDataColumnsVisible(holding);
+            SavePage(dialog, outputDirectory, "13-初始数据明细小窗口.png");
+
+            holding.ClearSelection();
+            holding.Rows[0].Selected = true;
+            holding.Rows[2].Selected = true;
+            FindButton(tabs.SelectedTab!, "删除行")!.PerformClick();
+            if (holding.Rows.Count != 998
+                || Convert.ToInt32(holding.Rows[0].Cells[0].Value, CultureInfo.InvariantCulture) != 40002
+                || Convert.ToInt32(holding.Rows[1].Cells[0].Value, CultureInfo.InvariantCulture) != 40004
+                || source.HoldingRegisters.Count != 1000)
+            {
+                throw new InvalidOperationException("明细表未按多选删除，或在应用前修改了原配置。");
+            }
+
+            FindButton(tabs.SelectedTab!, "新增行")!.PerformClick();
+            if (holding.CurrentCell?.RowIndex != holding.Rows.Count - 1
+                || holding.EditingControl is not TextBox newValue)
+            {
+                throw new InvalidOperationException("新增初始值后应滚动到新行并编辑其值。");
+            }
+
+            newValue.Text = "0x2A";
+            holding.EndEdit();
+            tabs.SelectedIndex = 1;
+            DataGridView input = GetInitialDataGrid(dialog, SlaveArea.InputRegisters);
+            input.CurrentCell = input.Rows[0].Cells[1];
+            input.BeginEdit(true);
+            ((TextBox)input.EditingControl).Text = "65535";
+            GetField<Button>(dialog, "_applyButton").PerformClick();
+            SlaveUnitConfiguration updated = GetUpdatedSlaveInitialData(dialog)
+                ?? throw new InvalidOperationException("明细窗口应用后没有返回配置。");
+            if (updated.UnitId != 7
+                || updated.HoldingRegisters.Count != 999
+                || updated.HoldingRegisters[^1].Address != 1000
+                || updated.HoldingRegisters[^1].Value != 42
+                || updated.InputRegisters[0].Value != 65535
+                || !updated.Coils[0].Value
+                || updated.DiscreteInputs[0].Value
+                || updated.ExceptionRules.Single().ExceptionCode != 2
+                || source.InputRegisters[0].Value != 10)
+            {
+                throw new InvalidOperationException("明细编辑未正确提交末次输入、十六进制值、四区数据或异常规则。");
+            }
+
+            dialog.Close();
+        }
+
+        CheckSlaveInitialDataValidation(owner, source);
+        CheckSlaveInitialDataMainEntry(owner, outputDirectory);
+        Console.WriteLine("已验证：1000 行初始值、四区明细、小窗口、多选删除、末次输入、无效值拒绝、取消和主表回填。");
+    }
+
+    private static void CheckSlaveInitialDataValidation(Form owner, SlaveUnitConfiguration source)
+    {
+        using Form dialog = CreateSlaveInitialDataEditor(source, AddressBase.ZeroBased, SlaveArea.HoldingRegisters);
+        dialog.Show(owner);
+        Pump(TimeSpan.FromMilliseconds(100));
+        DataGridView grid = GetInitialDataGrid(dialog, SlaveArea.HoldingRegisters);
+        Button apply = GetField<Button>(dialog, "_applyButton");
+        Label error = GetField<Label>(dialog, "_validationLabel");
+        grid.Rows[1].Cells[0].Value = 0;
+        apply.PerformClick();
+        if (!error.Visible || !error.Text.Contains("重复地址", StringComparison.Ordinal)
+            || GetUpdatedSlaveInitialData(dialog) is not null)
+        {
+            throw new InvalidOperationException("重复地址应定位并提示，不得应用。");
+        }
+
+        grid.Rows[1].Cells[0].Value = 1;
+        grid.Rows[1].Cells[1].Value = "65536";
+        apply.PerformClick();
+        if (!error.Text.Contains("65535", StringComparison.Ordinal)
+            || GetUpdatedSlaveInitialData(dialog) is not null)
+        {
+            throw new InvalidOperationException("超出 ushort 范围的寄存器初始值未被拒绝。");
+        }
+
+        grid.Rows[1].Cells[1].Value = null;
+        apply.PerformClick();
+        if (GetUpdatedSlaveInitialData(dialog) is not null || !error.Visible)
+        {
+            throw new InvalidOperationException("空寄存器值应给出提示而不是崩溃或应用。");
+        }
+
+        grid.Rows[1].Cells[1].Value = "1";
+        grid.CurrentCell = grid.Rows[1].Cells[0];
+        grid.BeginEdit(true);
+        ((TextBox)grid.EditingControl).Text = "无效地址";
+        if (grid.EndEdit() || !error.Text.Contains("整数", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("非整数地址应拦截绑定错误并显示中文提示。");
+        }
+
+        grid.CancelEdit();
+        grid.Rows[1].Cells[0].Value = -1;
+        apply.PerformClick();
+        if (!error.Text.Contains("有效地址", StringComparison.Ordinal)
+            || GetUpdatedSlaveInitialData(dialog) is not null)
+        {
+            throw new InvalidOperationException("负数地址未被拒绝。");
+        }
+
+        grid.Rows[1].Cells[0].Value = 1;
+        GetField<TabControl>(dialog, "_areaTabs").SelectedIndex = 2;
+        DataGridView coils = GetInitialDataGrid(dialog, SlaveArea.Coils);
+        coils.Rows[0].Cells[1].Value = "不是布尔值";
+        apply.PerformClick();
+        if (!error.Text.Contains("ON/OFF", StringComparison.Ordinal)
+            || GetUpdatedSlaveInitialData(dialog) is not null)
+        {
+            throw new InvalidOperationException("无效线圈值未被拒绝。");
+        }
+
+        FindButton(dialog, "取消")!.PerformClick();
+        if (GetUpdatedSlaveInitialData(dialog) is not null
+            || source.HoldingRegisters[1].Address != 1
+            || source.HoldingRegisters[1].Value != 1
+            || !source.Coils[0].Value)
+        {
+            throw new InvalidOperationException("取消编辑不得改变来源配置。");
+        }
+
+        dialog.Close();
+    }
+
+    private static void CheckSlaveInitialDataMainEntry(Form owner, string outputDirectory)
+    {
+        DataGridView units = GetField<DataGridView>(owner, "_slaveUnitGrid");
+        string original = (string)units.Rows[0].Cells[1].Value;
+        units.Rows[0].Cells[1].Value = string.Join(
+            ", ",
+            Enumerable.Range(0, 125).Select(index => $"{40001 + index} = {index}"));
+        units.CurrentCell = units.Rows[0].Cells[1];
+        Pump(TimeSpan.FromMilliseconds(100));
+        if (Convert.ToString(units.Rows[0].Cells[1].FormattedValue, CultureInfo.InvariantCulture) != "共 125 项"
+            || units.Columns[0].ReadOnly
+            || units.Columns.Cast<DataGridViewColumn>().Skip(1).Any(column => !column.ReadOnly))
+        {
+            throw new InvalidOperationException("主表应显示紧凑数量摘要，初始值必须在明细窗口编辑。");
+        }
+
+        SavePage(owner, outputDirectory, "14-初始数据摘要.png");
+        WithSlaveInitialDataDialog(
+            () => GetField<Button>(owner, "_slaveEditInitialDataButton").PerformClick(),
+            dialog =>
+            {
+                DataGridView grid = GetInitialDataGrid(dialog, SlaveArea.HoldingRegisters);
+                if (grid.Rows.Count != 125)
+                {
+                    throw new InvalidOperationException("主表打开明细后丢失了摘要之外的数据。");
+                }
+
+                grid.Rows[0].Cells[1].Value = "321";
+                GetField<Button>(dialog, "_applyButton").PerformClick();
+            });
+        if (!((string)units.Rows[0].Cells[1].Value).StartsWith("40001 = 321", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("明细应用后未回填主表完整配置。");
+        }
+
+        WithSlaveInitialDataDialog(
+            () => owner.GetType().GetMethod(
+                "OnSlaveUnitGridCellDoubleClick",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(owner, new object?[] { units, new DataGridViewCellEventArgs(2, 0) }),
+            dialog =>
+            {
+                if (GetField<TabControl>(dialog, "_areaTabs").SelectedIndex != 1)
+                {
+                    throw new InvalidOperationException("双击输入寄存器摘要未直接打开对应存储区。");
+                }
+
+                dialog.DialogResult = DialogResult.Cancel;
+            });
+        units.Rows[0].Cells[1].Value = original;
+    }
+
+    private static void WithSlaveInitialDataDialog(Action open, Action<Form> interact)
+    {
+        Exception? failure = null;
+        bool visited = false;
+        using System.Windows.Forms.Timer timer = new() { Interval = 80 };
+        timer.Tick += (_, _) =>
+        {
+            Form? dialog = Application.OpenForms.Cast<Form>()
+                .FirstOrDefault(form => form.GetType().Name == "SlaveInitialDataForm" && form.Modal);
+            if (dialog is null)
+            {
+                return;
+            }
+
+            timer.Stop();
+            visited = true;
+            try
+            {
+                interact(dialog);
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+                dialog.DialogResult = DialogResult.Cancel;
+            }
+        };
+        timer.Start();
+        open();
+        if (!visited || failure is not null)
+        {
+            throw new InvalidOperationException("从站初始数据明细交互失败。", failure);
+        }
+    }
+
+    private static Form CreateSlaveInitialDataEditor(
+        SlaveUnitConfiguration source,
+        AddressBase addressBase,
+        SlaveArea area)
+    {
+        Type formType = Assembly.Load("ModbusHelper.WinForms")
+            .GetType("ModbusHelper.WinForms.SlaveInitialDataForm", throwOnError: true)!;
+        return (Form)Activator.CreateInstance(
+            formType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            args: new object[] { source, addressBase, area },
+            culture: null)!;
+    }
+
+    private static DataGridView GetInitialDataGrid(Form dialog, SlaveArea area)
+    {
+        return (DataGridView)GetField<System.Collections.IDictionary>(dialog, "_grids")[area]!;
+    }
+
+    private static SlaveUnitConfiguration? GetUpdatedSlaveInitialData(Form dialog)
+    {
+        return (SlaveUnitConfiguration?)dialog.GetType()
+            .GetProperty("UpdatedConfiguration")!.GetValue(dialog);
+    }
+
+    private static void AssertInitialDataColumnsVisible(DataGridView grid)
+    {
+        for (int index = 0; index < grid.Columns.Count; index++)
+        {
+            Rectangle bounds = grid.GetColumnDisplayRectangle(index, cutOverflow: false);
+            int textWidth = TextRenderer.MeasureText(
+                grid.Columns[index].HeaderText,
+                grid.ColumnHeadersDefaultCellStyle.Font ?? grid.Font).Width;
+            if (bounds.Left < 0 || bounds.Right > grid.ClientSize.Width || bounds.Width < textWidth)
+            {
+                throw new InvalidOperationException("初始数据明细的地址或值列没有完整显示。");
+            }
+        }
+    }
+
     private static void CheckAddressBasePersistence(MethodInfo factory)
     {
         using Form restored = (Form)factory.Invoke(null, null)!;
@@ -702,9 +1026,10 @@ internal static class Program
         if (unitGrid.ReadOnly
             || !GetField<Button>(form, "_slaveAddUnitButton").Enabled
             || !GetField<Button>(form, "_slaveDeleteUnitButton").Enabled
+            || !GetField<Button>(form, "_slaveEditInitialDataButton").Enabled
             || !slaveUnitsGroup.Text.Contains("已停止时可编辑", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("从站停止后初始数据表及新增/删除单元操作应恢复可用并显示状态。");
+            throw new InvalidOperationException("从站停止后初始数据表及新增、删除、编辑操作应恢复可用并显示状态。");
         }
 
         unitGrid.Rows[0].Cells[1].Value = "40001 = 100";
