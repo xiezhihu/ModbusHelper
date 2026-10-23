@@ -33,7 +33,9 @@ internal static class UiHelpers
 {
     private const uint EmGetFirstVisibleLine = 0x00CE;
     private const uint EmLineScroll = 0x00B6;
+    private const uint EmScroll = 0x00B5;
     private const int SbHorizontal = 0;
+    private const int SbBottom = 7;
     private const uint WmSetRedraw = 0x000B;
 
     /// <summary>
@@ -74,12 +76,7 @@ internal static class UiHelpers
     /// </summary>
     public static void ConfigureGridMetrics(DataGridView grid)
     {
-        typeof(DataGridView)
-            .GetProperty(
-                "DoubleBuffered",
-                System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.NonPublic)
-            ?.SetValue(grid, true);
+        EnableDoubleBuffer(grid);
         grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
         using ComboBox comboProbe = new()
         {
@@ -100,6 +97,19 @@ internal static class UiHelpers
         grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.DefaultCellStyle.Padding = Padding.Empty;
+    }
+
+    /// <summary>
+    /// 为频繁更新的控件开启双缓冲，减少局部重绘时的白闪。
+    /// </summary>
+    public static void EnableDoubleBuffer(Control control)
+    {
+        typeof(Control)
+            .GetProperty(
+                "DoubleBuffered",
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)
+            ?.SetValue(control, true);
     }
 
     public static Button CreateButton(string text, Action action, int width = 96)
@@ -262,7 +272,7 @@ internal static class UiHelpers
     {
         if (textBox.IsHandleCreated)
         {
-            _ = SetScrollPos(textBox.Handle, SbHorizontal, Math.Max(0, position), true);
+            _ = SetScrollPos(textBox.Handle, SbHorizontal, Math.Max(0, position), false);
         }
     }
 
@@ -281,6 +291,9 @@ internal static class UiHelpers
 
         if (GetFirstVisibleLine(textBox) != targetLine)
         {
+            int selectionStart = textBox.SelectionStart;
+            int selectionLength = textBox.SelectionLength;
+            int horizontalScrollPosition = GetHorizontalScrollPosition(textBox);
             int charIndex = textBox.GetFirstCharIndexFromLine(targetLine);
             if (charIndex < 0)
             {
@@ -290,6 +303,14 @@ internal static class UiHelpers
             textBox.SelectionStart = charIndex;
             textBox.SelectionLength = 0;
             textBox.ScrollToCaret();
+            int restoredSelectionStart = Math.Clamp(selectionStart, 0, textBox.TextLength);
+            textBox.Select(
+                restoredSelectionStart,
+                Math.Clamp(
+                    selectionLength,
+                    0,
+                    Math.Max(0, textBox.TextLength - restoredSelectionStart)));
+            SetHorizontalScrollPosition(textBox, horizontalScrollPosition);
         }
     }
 
@@ -324,9 +345,26 @@ internal static class UiHelpers
             return;
         }
 
+        int visibleLineCount = Math.Max(
+            1,
+            textBox.ClientSize.Height / Math.Max(1, textBox.Font.Height));
+        int targetLine = Math.Max(0, textBox.Lines.Length - visibleLineCount);
+        if (textBox.IsHandleCreated)
+        {
+            _ = SendMessage(
+                textBox.Handle,
+                EmScroll,
+                new IntPtr(SbBottom),
+                IntPtr.Zero);
+        }
+
+        if (GetFirstVisibleLine(textBox) < targetLine)
+        {
+            ScrollTextBoxToLine(textBox, targetLine);
+        }
+
         textBox.SelectionStart = textBox.TextLength;
         textBox.SelectionLength = 0;
-        textBox.ScrollToCaret();
         SetHorizontalScrollPosition(textBox, horizontalScrollPosition);
     }
 
@@ -340,6 +378,11 @@ internal static class UiHelpers
             return;
         }
 
+        if (string.Equals(textBox.Text, text, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         SendMessage(textBox.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
         try
         {
@@ -348,7 +391,60 @@ internal static class UiHelpers
         finally
         {
             SendMessage(textBox.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
-            textBox.Invalidate();
+            textBox.Invalidate(false);
+        }
+    }
+
+    /// <summary>
+    /// 在同一次禁止重绘期间替换文本并恢复滚动位置，避免文本重绘和滚动重绘各闪一次。
+    /// </summary>
+    public static void ReplaceTextAndRestoreScrollWithoutFlicker(
+        TextBox textBox,
+        string text,
+        TextBoxScrollState scrollState)
+    {
+        if (textBox.IsDisposed)
+        {
+            return;
+        }
+
+        if (string.Equals(textBox.Text, text, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        SendMessage(textBox.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+        try
+        {
+            textBox.Text = text;
+            RestoreTextBoxScroll(textBox, scrollState);
+        }
+        finally
+        {
+            SendMessage(textBox.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+            textBox.Invalidate(false);
+        }
+    }
+
+    /// <summary>
+    /// 在禁止重绘期间追加文本，适用于历史区域只增加末尾记录的场景。
+    /// </summary>
+    public static void AppendTextWithoutFlicker(TextBox textBox, string text)
+    {
+        if (textBox.IsDisposed || string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        SendMessage(textBox.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+        try
+        {
+            textBox.AppendText(text);
+        }
+        finally
+        {
+            SendMessage(textBox.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+            textBox.Invalidate(false);
         }
     }
 
@@ -372,7 +468,7 @@ internal static class UiHelpers
         finally
         {
             SendMessage(control.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
-            control.Invalidate(true);
+            control.Invalidate(false);
         }
     }
 

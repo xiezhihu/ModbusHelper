@@ -24,6 +24,8 @@ public sealed partial class MainForm
     private bool _rebuildingTrendSeries;
     private Point _lastTrendMousePosition;
     private long _lastTrendHitTestMilliseconds;
+    private long _lastTrendAxisUpdateMilliseconds;
+    private int _lastTrendWindowSeconds = -1;
 
     private void InitializeTrendPage()
     {
@@ -82,6 +84,7 @@ public sealed partial class MainForm
     private void ConfigureTrendChart()
     {
         _trendChart.Dock = DockStyle.Fill;
+        UiHelpers.EnableDoubleBuffer(_trendChart);
         _trendChart.BackColor = Color.White;
         _trendChart.BorderlineColor = Color.FromArgb(196, 208, 210);
         _trendChart.BorderlineDashStyle = ChartDashStyle.Solid;
@@ -154,6 +157,8 @@ public sealed partial class MainForm
             _trendChart.Series.Clear();
             _trendSeriesList.Items.Clear();
             _trendCursors.Clear();
+            _lastTrendAxisUpdateMilliseconds = 0;
+            _lastTrendWindowSeconds = -1;
             foreach (PollingTaskConfiguration task in _configuration.PollingTasks
                          .Where(task => task.ShowInTrend))
             {
@@ -198,12 +203,11 @@ public sealed partial class MainForm
         DateTimeOffset now = DateTimeOffset.Now;
         DateTime cutoff = now.LocalDateTime.AddSeconds(-windowSeconds);
         ChartArea area = _trendChart.ChartAreas[0];
-        area.AxisX.Maximum = now.LocalDateTime.ToOADate();
-        area.AxisX.Minimum = cutoff.ToOADate();
 
         _trendChart.SuspendLayout();
         try
         {
+            bool chartChanged = false;
             foreach (Series chartSeries in _trendChart.Series)
             {
                 TrendSeries? trendSeries = _services.TrendDataStore.Get(chartSeries.Name);
@@ -215,7 +219,11 @@ public sealed partial class MainForm
                 long cursor = _trendCursors.GetValueOrDefault(chartSeries.Name);
                 cursor = trendSeries.ReadAfter(cursor, out TrendSample[] samples);
                 _trendCursors[chartSeries.Name] = cursor;
-                chartSeries.Enabled = trendSeries.Visible;
+                if (chartSeries.Enabled != trendSeries.Visible)
+                {
+                    chartSeries.Enabled = trendSeries.Visible;
+                    chartChanged = true;
+                }
                 if (!trendSeries.Visible)
                 {
                     continue;
@@ -235,6 +243,7 @@ public sealed partial class MainForm
                         chartSeries.Points.AddXY(
                             sample.Timestamp.LocalDateTime.ToOADate(),
                             sample.Value);
+                        chartChanged = true;
                     }
 
                     while (chartSeries.Points.Count > 0
@@ -242,12 +251,35 @@ public sealed partial class MainForm
                                || chartSeries.Points.Count > _trendCapacityInput.Value))
                     {
                         chartSeries.Points.RemoveAt(0);
+                        chartChanged = true;
                     }
                 }
                 finally
                 {
                     chartSeries.Points.ResumeUpdates();
                 }
+            }
+
+            long nowMilliseconds = Environment.TickCount64;
+            bool refreshAxis = chartChanged
+                || windowSeconds != _lastTrendWindowSeconds
+                || nowMilliseconds - _lastTrendAxisUpdateMilliseconds >= 500;
+            if (refreshAxis)
+            {
+                double maximum = now.LocalDateTime.ToOADate();
+                double minimum = cutoff.ToOADate();
+                if (area.AxisX.Maximum != maximum)
+                {
+                    area.AxisX.Maximum = maximum;
+                }
+
+                if (area.AxisX.Minimum != minimum)
+                {
+                    area.AxisX.Minimum = minimum;
+                }
+
+                _lastTrendAxisUpdateMilliseconds = nowMilliseconds;
+                _lastTrendWindowSeconds = windowSeconds;
             }
         }
         finally

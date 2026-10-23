@@ -55,6 +55,7 @@ public sealed partial class MainForm : Form
     private bool _allowClose;
     private long _lastRequestHistoryRevision = -1;
     private string _lastChartToolTipText = string.Empty;
+    private string _lastStatisticsText = string.Empty;
 
     internal MainForm(AppServices services)
     {
@@ -193,6 +194,7 @@ public sealed partial class MainForm : Form
         _mainTabs.TabPages.Add(_slavePage);
         _mainTabs.TabPages.Add(_trendPage);
         _mainTabs.TabPages.Add(_logPage);
+        UiHelpers.EnableDoubleBuffer(_mainTabs);
 
         StatusStrip statusStrip = new()
         {
@@ -546,8 +548,13 @@ public sealed partial class MainForm : Form
     {
         Business.Statistics.CommunicationStatisticsSnapshot snapshot =
             _services.ConnectionManager.Statistics.GetSnapshot();
-        _statusStatisticsLabel.Text =
+        string text =
             $"请求 {snapshot.Requests} / 响应 {snapshot.Responses} / 错误 {snapshot.Errors} / 平均 {snapshot.AverageDurationMilliseconds:F1} ms";
+        if (!string.Equals(_lastStatisticsText, text, StringComparison.Ordinal))
+        {
+            _lastStatisticsText = text;
+            _statusStatisticsLabel.Text = text;
+        }
     }
 
     private void OnPollingTaskFailed(PollingTaskErrorEventArgs args)

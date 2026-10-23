@@ -162,21 +162,26 @@ public sealed partial class MainForm
             _logSearchInput.Text,
             limit: 3000,
             newestFirst: true);
-        _logBindings.RaiseListChangedEvents = false;
-        _logBindings.Clear();
-        foreach (ModbusLogRecord record in snapshot)
-        {
-            _logBindings.Add(record);
-        }
+        UiHelpers.UpdateWithoutFlicker(
+            _logGrid,
+            () =>
+            {
+                _logBindings.RaiseListChangedEvents = false;
+                _logBindings.Clear();
+                foreach (ModbusLogRecord record in snapshot)
+                {
+                    _logBindings.Add(record);
+                }
 
-        _logBindings.RaiseListChangedEvents = true;
-        _logBindings.ResetBindings();
-        if (!followLatest
-            && _logGrid.Rows.Count > 0
-            && firstDisplayedRow < _logGrid.Rows.Count)
-        {
-            _logGrid.FirstDisplayedScrollingRowIndex = firstDisplayedRow;
-        }
+                _logBindings.RaiseListChangedEvents = true;
+                _logBindings.ResetBindings();
+                if (!followLatest
+                    && _logGrid.Rows.Count > 0
+                    && firstDisplayedRow < _logGrid.Rows.Count)
+                {
+                    _logGrid.FirstDisplayedScrollingRowIndex = firstDisplayedRow;
+                }
+            });
     }
 
     private void OnLogGridCellFormatting(

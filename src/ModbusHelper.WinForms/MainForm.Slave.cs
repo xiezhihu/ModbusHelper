@@ -1741,13 +1741,12 @@ public sealed partial class MainForm
                 .Take(200)
                 .Reverse()
                 .Select(FormatSlaveFrameHistoryLine));
-        UiHelpers.ReplaceTextWithoutFlicker(
+        UiHelpers.ReplaceTextAndRestoreScrollWithoutFlicker(
             _slaveFrameBox,
             string.IsNullOrWhiteSpace(frameText)
                 ? "暂无从站报文记录。"
-                : frameText);
-
-        UiHelpers.RestoreTextBoxScroll(_slaveFrameBox, scrollState);
+                : frameText,
+            scrollState);
     }
 
     private static string FormatSlaveFrameHistoryLine(ModbusLogRecord record)

@@ -570,20 +570,22 @@ public sealed partial class MainForm
     {
         bool added = false;
         bool followBottom = UiHelpers.IsGridAtBottom(_liveValueGrid);
-        if (!_liveRows.TryGetValue(args.Task.Id, out DataGridViewRow? row))
-        {
-            int index = _liveValueGrid.Rows.Add();
-            row = _liveValueGrid.Rows[index];
-            row.Tag = args.Task.Id;
-            _liveRows[args.Task.Id] = row;
-            added = true;
-        }
+        DataGridViewRow? row = null;
 
         UiHelpers.UpdateWithoutFlicker(
             _liveValueGrid,
             () =>
             {
-                row.Cells[1].Value = args.Timestamp.ToString(
+                if (!_liveRows.TryGetValue(args.Task.Id, out row))
+                {
+                    int index = _liveValueGrid.Rows.Add();
+                    row = _liveValueGrid.Rows[index];
+                    row.Tag = args.Task.Id;
+                    _liveRows[args.Task.Id] = row;
+                    added = true;
+                }
+
+                row!.Cells[1].Value = args.Timestamp.ToString(
                     "【yyyy-MM-dd HH:mm:ss.fff】",
                     CultureInfo.InvariantCulture);
                 row.Cells[2].Value = args.ParsedValue;

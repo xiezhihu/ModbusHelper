@@ -410,18 +410,18 @@ public sealed partial class MainForm
                 $"【{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff}】 {record.Hex}")
             .ToArray();
 
-        UiHelpers.ReplaceTextWithoutFlicker(
+        UiHelpers.ReplaceTextAndRestoreScrollWithoutFlicker(
             _requestHexBox,
-            string.Join(Environment.NewLine, requestLines));
-        UiHelpers.ReplaceTextWithoutFlicker(
+            string.Join(Environment.NewLine, requestLines),
+            requestScrollState);
+        UiHelpers.ReplaceTextAndRestoreScrollWithoutFlicker(
             _responseHexBox,
             responseLines.Length > 0
                 ? string.Join(Environment.NewLine, responseLines)
                 : string.IsNullOrWhiteSpace(responseFallback)
                     ? string.Empty
-                    : $"【{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff}】 {responseFallback}");
-        UiHelpers.RestoreTextBoxScroll(_requestHexBox, requestScrollState);
-        UiHelpers.RestoreTextBoxScroll(_responseHexBox, responseScrollState);
+                    : $"【{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff}】 {responseFallback}",
+            responseScrollState);
     }
 
     private static TableLayoutPanel AddUnit(Control input, string unit)
