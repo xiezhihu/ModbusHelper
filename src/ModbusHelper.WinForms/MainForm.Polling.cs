@@ -85,6 +85,7 @@ public sealed partial class MainForm
         _pollingGrid.CellFormatting += OnPollingGridCellFormatting;
         _pollingGrid.CellParsing += OnPollingGridCellParsing;
         _pollingGrid.CellValueChanged += OnPollingGridCellValueChanged;
+        _pollingGrid.CellBeginEdit += OnPollingGridCellBeginEdit;
         _pollingGrid.CurrentCellDirtyStateChanged += (_, _) =>
         {
             if (_pollingGrid.IsCurrentCellDirty)
@@ -696,6 +697,37 @@ public sealed partial class MainForm
         await _services.PollingScheduler.StopTaskAsync(task.Id);
         task.IsRunning = false;
         ResetPollingTaskItem(task);
+    }
+
+    private void OnPollingGridCellBeginEdit(
+        object? sender,
+        DataGridViewCellCancelEventArgs e)
+    {
+        if (e.RowIndex < 0
+            || e.ColumnIndex < 0
+            || _pollingGrid.Rows[e.RowIndex].DataBoundItem is not PollingTaskConfiguration task
+            || !string.Equals(
+                _pollingGrid.Columns[e.ColumnIndex].DataPropertyName,
+                nameof(PollingTaskConfiguration.Count),
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        int required = ModbusDataShapeRules.IsRegisterRead(task.Function)
+            ? ModbusDataShapeRules.GetRequiredRegisterCount(task.DataType)
+            : 0;
+        if (required <= 0)
+        {
+            return;
+        }
+
+        task.Count = checked((ushort)required);
+        ResetPollingTaskItem(task);
+        e.Cancel = true;
+        _statusPollingLabel.Text =
+            $"数据类型 {task.DataType} 固定占用 {required} 个寄存器，数量不能修改。";
+        _statusPollingLabel.ForeColor = Color.DarkSlateGray;
     }
 
     private void ResetPollingTaskItem(PollingTaskConfiguration task)

@@ -324,6 +324,7 @@ internal static class Program
         }
 
         AssertReadOnlyFunctionOptions(pollingGrid, 2);
+        CheckPollingDataTypeCountConstraints(pollingGrid);
 
         pollingGrid.ClearSelection();
         if (pollingGrid.Rows.Count >= 2)
@@ -418,6 +419,35 @@ internal static class Program
 
         SelectComboByText(function, "03");
         SelectComboByText(dataType, "UInt16");
+    }
+
+    private static void CheckPollingDataTypeCountConstraints(
+        DataGridView pollingGrid)
+    {
+        if (pollingGrid.Rows.Count == 0
+            || pollingGrid.Rows[0].DataBoundItem is not PollingTaskConfiguration task)
+        {
+            throw new InvalidOperationException("未找到轮询任务，无法检查数量限制。");
+        }
+
+        task.Function = ModbusFunction.ReadHoldingRegisters;
+        task.DataType = DataValueType.UInt16;
+        task.Count = 2;
+        pollingGrid.CurrentCell = pollingGrid.Rows[0].Cells[5];
+        pollingGrid.BeginEdit(true);
+        if (pollingGrid.IsCurrentCellInEditMode)
+        {
+            throw new InvalidOperationException("UInt16 轮询数量单元格仍允许编辑。");
+        }
+
+        if (task.Count != 1
+            || Convert.ToUInt16(
+                pollingGrid.Rows[0].Cells[5].Value,
+                CultureInfo.InvariantCulture) != 1)
+        {
+            throw new InvalidOperationException(
+                $"UInt16 轮询数量应限制为 1，实际配置值={task.Count}，表格值={pollingGrid.Rows[0].Cells[5].Value}。");
+        }
     }
 
     private static void CheckHistoryScrollPreservation(

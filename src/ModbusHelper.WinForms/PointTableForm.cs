@@ -149,6 +149,7 @@ internal sealed class PointTableForm : Form
         _grid.CellFormatting += OnGridCellFormatting;
         _grid.CellParsing += OnGridCellParsing;
         _grid.CellValueChanged += OnGridCellValueChanged;
+        _grid.CellBeginEdit += OnGridCellBeginEdit;
         _grid.CurrentCellDirtyStateChanged += (_, _) =>
         {
             if (_grid.IsCurrentCellDirty)
@@ -428,6 +429,42 @@ internal sealed class PointTableForm : Form
         {
             NormalizePointCount(point);
         }
+    }
+
+    private void OnGridCellBeginEdit(
+        object? sender,
+        DataGridViewCellCancelEventArgs e)
+    {
+        if (e.RowIndex < 0
+            || e.ColumnIndex < 0
+            || _grid.Rows[e.RowIndex].DataBoundItem is not PointConfiguration point
+            || !string.Equals(
+                _grid.Columns[e.ColumnIndex].DataPropertyName,
+                nameof(PointConfiguration.Count),
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        int required = ModbusDataShapeRules.IsRegisterRead(point.Function)
+            ? ModbusDataShapeRules.GetRequiredRegisterCount(point.DataType)
+            : 0;
+        if (required <= 0)
+        {
+            return;
+        }
+
+        point.Count = checked((ushort)required);
+        int index = _points.IndexOf(point);
+        if (index >= 0)
+        {
+            _points.ResetItem(index);
+        }
+
+        e.Cancel = true;
+        _toolTip.SetToolTip(
+            _grid,
+            $"当前数据类型 {point.DataType} 固定占用 {required} 个寄存器，数量不可编辑；字符串类型可编辑数量。");
     }
 
     private static void NormalizePointCount(PointConfiguration point)
