@@ -431,6 +431,14 @@ internal static class Program
         }
 
         task.Function = ModbusFunction.ReadHoldingRegisters;
+        task.DataType = DataValueType.Float;
+        task.Count = 2;
+        pollingGrid.Refresh();
+        CheckImmediateDataTypeCount(pollingGrid, "UInt16", 1);
+        CheckImmediateDataTypeCount(pollingGrid, "Float", 2);
+        CheckImmediateDataTypeCount(pollingGrid, "Double", 4);
+        CheckImmediateDataTypeCount(pollingGrid, "UInt16", 1);
+
         task.DataType = DataValueType.UInt16;
         task.Count = 2;
         pollingGrid.CurrentCell = pollingGrid.Rows[0].Cells[5];
@@ -447,6 +455,58 @@ internal static class Program
         {
             throw new InvalidOperationException(
                 $"UInt16 轮询数量应限制为 1，实际配置值={task.Count}，表格值={pollingGrid.Rows[0].Cells[5].Value}。");
+        }
+    }
+
+    private static void CheckImmediateDataTypeCount(
+        DataGridView grid,
+        string dataType,
+        ushort expectedCount)
+    {
+        int typeColumnIndex = grid.Columns.Cast<DataGridViewColumn>()
+            .Single(column => column.DataPropertyName == nameof(PollingTaskConfiguration.DataType))
+            .Index;
+        int countColumnIndex = grid.Columns.Cast<DataGridViewColumn>()
+            .Single(column => column.DataPropertyName == nameof(PollingTaskConfiguration.Count))
+            .Index;
+        DataGridViewCell typeCell = grid.Rows[0].Cells[typeColumnIndex];
+        DataGridViewCell countCell = grid.Rows[0].Cells[countColumnIndex];
+        grid.CurrentCell = typeCell;
+        grid.BeginEdit(true);
+        Pump(TimeSpan.FromMilliseconds(80));
+        if (grid.EditingControl is not ComboBox dataTypeCombo)
+        {
+            throw new InvalidOperationException("未能打开数据类型下拉框。");
+        }
+
+        string? paintedCount = null;
+        void OnCountCellPainting(object? sender, DataGridViewCellPaintingEventArgs args)
+        {
+            if (args.RowIndex == 0 && args.ColumnIndex == countColumnIndex)
+            {
+                paintedCount = Convert.ToString(args.FormattedValue, CultureInfo.InvariantCulture);
+            }
+        }
+
+        grid.CellPainting += OnCountCellPainting;
+        try
+        {
+            SelectComboByText(dataTypeCombo, dataType);
+            Pump(TimeSpan.FromMilliseconds(100));
+            string expectedText = expectedCount.ToString(CultureInfo.InvariantCulture);
+            if (Convert.ToUInt16(countCell.Value, CultureInfo.InvariantCulture) != expectedCount
+                || paintedCount != expectedText
+                || grid.CurrentCell != typeCell)
+            {
+                throw new InvalidOperationException(
+                    $"切换为 {dataType} 后数量应立即显示 {expectedCount} 且不离开类型格，"
+                    + $"实际配置值={countCell.Value}，绘制值={paintedCount ?? "未重绘"}。");
+            }
+        }
+        finally
+        {
+            grid.CellPainting -= OnCountCellPainting;
+            grid.EndEdit();
         }
     }
 
@@ -1205,6 +1265,8 @@ internal static class Program
         }
 
         AssertReadOnlyFunctionOptions(grid, 2);
+        CheckImmediateDataTypeCount(grid, "Float", 2);
+        CheckImmediateDataTypeCount(grid, "UInt16", 1);
         SavePage(form, outputDirectory, "9-点位表.png");
         CheckLayoutWindow(form);
 

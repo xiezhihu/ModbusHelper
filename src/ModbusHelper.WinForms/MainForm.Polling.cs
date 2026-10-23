@@ -673,7 +673,13 @@ public sealed partial class MainForm
             or nameof(PollingTaskConfiguration.DataType)
             or nameof(PollingTaskConfiguration.Count))
         {
+            ushort previousCount = task.Count;
             NormalizePollingTaskCount(task);
+            if (task.Count != previousCount)
+            {
+                ResetPollingTaskItem(task);
+            }
+
             return;
         }
 

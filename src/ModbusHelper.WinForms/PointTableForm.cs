@@ -427,7 +427,13 @@ internal sealed class PointTableForm : Form
             or nameof(PointConfiguration.DataType)
             or nameof(PointConfiguration.Count))
         {
+            ushort previousCount = point.Count;
             NormalizePointCount(point);
+            int index = _points.IndexOf(point);
+            if (point.Count != previousCount && index >= 0)
+            {
+                _points.ResetItem(index);
+            }
         }
     }
 
