@@ -247,8 +247,14 @@ public sealed partial class MainForm : Form
         SetToolTip(_manualFunctionCombo, "选择要执行的 Modbus 功能码。读写数量上限会随功能码校验。");
         SetToolTip(_manualUnitInput, "读操作允许 1-247；写操作还允许 0（广播写）。");
         SetToolTip(_manualAddressInput, "按当前地址基准输入，发送给 NModbus 前会转换为 0 基地址。");
-        SetToolTip(_manualCountInput, "读取数量：寄存器最多 125，线圈或离散输入最多 2000。");
-        SetToolTip(_manualDataTypeCombo, "将原始 ushort 寄存器解析为数值或字符串。32 位占 2 个寄存器，64 位占 4 个寄存器。");
+        SetToolTip(
+            _manualCountInput,
+            "03/04 读取时，固定数值类型会锁定所需寄存器数量：16 位为 1 个、32 位为 2 个、Double 为 4 个；"
+            + "字符串可读取多个寄存器，01/02 按线圈或离散输入数量计算。写多寄存器时数量由写入值个数决定。");
+        SetToolTip(
+            _manualDataTypeCombo,
+            "将原始 ushort 寄存器解析为数值或字符串。每个 Modbus 寄存器为 16 位（2 字节）；"
+            + "32 位类型占 2 个寄存器，64 位类型占 4 个寄存器。");
         SetToolTip(_manualByteOrderCombo, "字序表示寄存器排列，字节序表示单个寄存器内部高低字节排列。");
         SetToolTip(_manualWriteDataInput, "写操作输入值；多值可使用逗号、分号或空格分隔。");
         SetToolTip(_executeManualButton, "立即执行一次当前参数对应的读写操作。");
@@ -263,7 +269,11 @@ public sealed partial class MainForm : Form
         SetGridToolTip(_pollingGrid, "功能码", "轮询只执行读取功能码 01、02、03、04；写入请使用主站连接与读写页。");
         SetGridToolTip(_pollingGrid, "起始地址", "按当前地址基准显示，实际发送前转换为 0 基协议地址。");
         SetGridToolTip(_pollingGrid, "间隔毫秒", "周期轮询间隔，最小 100 毫秒；同一连接下任务会串行执行。");
-        SetGridToolTip(_pollingGrid, "数据类型", "将寄存器原始值解析为 Int16、UInt32、Float、字符串等类型。");
+        SetGridToolTip(
+            _pollingGrid,
+            "数据类型",
+            "03/04 读取时固定数值类型会自动匹配数量：16 位为 1 个、32 位为 2 个、Double 为 4 个；"
+            + "字符串数量可变。01/02 的数量按位计算。");
         SetGridToolTip(_pollingGrid, "字节序", "ABCD、CDAB、BADC、DCBA 四种寄存器与字节排列方式。");
         SetGridToolTip(_pollingGrid, "趋势", "勾选后将任务采样结果写入趋势数据缓冲区。");
         SetGridToolTip(_pollingGrid, "运行", "当前任务是否正在由轮询调度器执行。");

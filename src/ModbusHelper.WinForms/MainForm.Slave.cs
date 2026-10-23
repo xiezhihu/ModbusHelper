@@ -1735,16 +1735,17 @@ public sealed partial class MainForm
             ModbusLogLevel.Debug,
             limit: 500,
             newestFirst: true);
-        _slaveFrameBox.Text = string.Join(
+        string frameText = string.Join(
             Environment.NewLine,
             records.Where(record => record.Role == ModbusRole.Slave)
                 .Take(200)
                 .Reverse()
                 .Select(FormatSlaveFrameHistoryLine));
-        if (string.IsNullOrWhiteSpace(_slaveFrameBox.Text))
-        {
-            _slaveFrameBox.Text = "暂无从站报文记录。";
-        }
+        UiHelpers.ReplaceTextWithoutFlicker(
+            _slaveFrameBox,
+            string.IsNullOrWhiteSpace(frameText)
+                ? "暂无从站报文记录。"
+                : frameText);
 
         UiHelpers.RestoreTextBoxScroll(_slaveFrameBox, scrollState);
     }

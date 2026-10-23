@@ -28,6 +28,7 @@ int failed = 0;
 
 await RunAsync("地址基准换算", TestAddressConversion);
 await RunAsync("读数量边界", TestReadLimits);
+await RunAsync("数据类型与寄存器数量", TestDataTypeRegisterCount);
 await RunAsync("写数量边界", TestWriteLimits);
 await RunAsync("从站地址规则", TestUnitIdRules);
 await RunAsync("重试预算提示", TestRetryBudgetWarning);
@@ -137,6 +138,40 @@ static Task TestReadLimits()
     False(ModbusRequestValidator.ValidateReadCount(
         ModbusFunction.ReadCoils,
         2001).IsValid);
+    return Task.CompletedTask;
+}
+
+static Task TestDataTypeRegisterCount()
+{
+    Equal(
+        1,
+        ModbusDataShapeRules.GetRequiredRegisterCount(DataValueType.UInt16));
+    Equal(
+        2,
+        ModbusDataShapeRules.GetRequiredRegisterCount(DataValueType.Float));
+    Equal(
+        4,
+        ModbusDataShapeRules.GetRequiredRegisterCount(DataValueType.Double));
+    True(ModbusDataShapeRules.IsCompatible(
+        ModbusFunction.ReadHoldingRegisters,
+        DataValueType.UInt16,
+        1));
+    False(ModbusDataShapeRules.IsCompatible(
+        ModbusFunction.ReadHoldingRegisters,
+        DataValueType.UInt16,
+        10));
+    True(ModbusDataShapeRules.IsCompatible(
+        ModbusFunction.ReadHoldingRegisters,
+        DataValueType.Ascii,
+        10));
+    True(ModbusDataShapeRules.IsCompatible(
+        ModbusFunction.ReadCoils,
+        DataValueType.UInt16,
+        10));
+    True(ModbusDataShapeRules.IsCompatible(
+        ModbusFunction.WriteMultipleRegisters,
+        DataValueType.UInt16,
+        10));
     return Task.CompletedTask;
 }
 

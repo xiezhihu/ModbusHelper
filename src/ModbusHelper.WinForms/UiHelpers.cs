@@ -33,11 +33,16 @@ internal static class UiHelpers
 {
     private const uint EmGetFirstVisibleLine = 0x00CE;
     private const uint EmLineScroll = 0x00B6;
+    private const int SbHorizontal = 0;
+    private const uint WmSetRedraw = 0x000B;
 
     /// <summary>
     /// 多行文本框刷新前的滚动状态。
     /// </summary>
-    public readonly record struct TextBoxScrollState(bool FollowBottom, int FirstVisibleLine);
+    public readonly record struct TextBoxScrollState(
+        bool FollowBottom,
+        int FirstVisibleLine,
+        int HorizontalScrollPosition);
 
     /// <summary>
     /// 按当前控件的 DPI 将设计时像素换算为实际像素。
@@ -69,6 +74,12 @@ internal static class UiHelpers
     /// </summary>
     public static void ConfigureGridMetrics(DataGridView grid)
     {
+        typeof(DataGridView)
+            .GetProperty(
+                "DoubleBuffered",
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.NonPublic)
+            ?.SetValue(grid, true);
         grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
         using ComboBox comboProbe = new()
         {
@@ -174,14 +185,15 @@ internal static class UiHelpers
     {
         if (textBox.IsDisposed)
         {
-            return new TextBoxScrollState(true, 0);
+            return new TextBoxScrollState(true, 0, 0);
         }
 
         int firstVisibleLine = GetFirstVisibleLine(textBox);
 
         TextBoxScrollState state = new(
             IsTextBoxAtBottom(textBox),
-            firstVisibleLine);
+            firstVisibleLine,
+            GetHorizontalScrollPosition(textBox));
         return state;
     }
 
@@ -200,7 +212,7 @@ internal static class UiHelpers
 
         if (state.FollowBottom)
         {
-            ScrollTextBoxToEnd(textBox);
+            ScrollTextBoxToEnd(textBox, state.HorizontalScrollPosition);
             return;
         }
 
@@ -209,6 +221,7 @@ internal static class UiHelpers
             int maxLine = Math.Max(0, textBox.Lines.Length - 1);
             int targetLine = Math.Clamp(state.FirstVisibleLine, 0, maxLine);
             ScrollTextBoxToLine(textBox, targetLine);
+            SetHorizontalScrollPosition(textBox, state.HorizontalScrollPosition);
         }
         catch (ArgumentOutOfRangeException)
         {
@@ -235,6 +248,21 @@ internal static class UiHelpers
         catch (ArgumentOutOfRangeException)
         {
             return 0;
+        }
+    }
+
+    private static int GetHorizontalScrollPosition(TextBox textBox)
+    {
+        return textBox.IsHandleCreated
+            ? GetScrollPos(textBox.Handle, SbHorizontal)
+            : 0;
+    }
+
+    private static void SetHorizontalScrollPosition(TextBox textBox, int position)
+    {
+        if (textBox.IsHandleCreated)
+        {
+            _ = SetScrollPos(textBox.Handle, SbHorizontal, Math.Max(0, position), true);
         }
     }
 
@@ -272,11 +300,24 @@ internal static class UiHelpers
         IntPtr wParam,
         IntPtr lParam);
 
+    [DllImport("user32.dll")]
+    private static extern int GetScrollPos(IntPtr handle, int bar);
+
+    [DllImport("user32.dll")]
+    private static extern int SetScrollPos(
+        IntPtr handle,
+        int bar,
+        int position,
+        bool redraw);
+
     /// <summary>
     /// 按调用前记录的底部状态滚动到最新内容。历史区域统一按时间正序追加，
     /// 因此最新记录位于末尾；使用控件自身的滚动逻辑，不调用逐条 Invoke。
     /// </summary>
-    public static void ScrollTextBoxToEnd(TextBox textBox, bool followBottom = true)
+    public static void ScrollTextBoxToEnd(
+        TextBox textBox,
+        int horizontalScrollPosition = 0,
+        bool followBottom = true)
     {
         if (textBox.IsDisposed || !followBottom)
         {
@@ -286,6 +327,53 @@ internal static class UiHelpers
         textBox.SelectionStart = textBox.TextLength;
         textBox.SelectionLength = 0;
         textBox.ScrollToCaret();
+        SetHorizontalScrollPosition(textBox, horizontalScrollPosition);
+    }
+
+    /// <summary>
+    /// 在禁止重绘期间替换文本，减少历史区域刷新时的闪烁。
+    /// </summary>
+    public static void ReplaceTextWithoutFlicker(TextBox textBox, string text)
+    {
+        if (textBox.IsDisposed)
+        {
+            return;
+        }
+
+        SendMessage(textBox.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+        try
+        {
+            textBox.Text = text;
+        }
+        finally
+        {
+            SendMessage(textBox.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+            textBox.Invalidate();
+        }
+    }
+
+    /// <summary>
+    /// 在禁止重绘期间执行控件更新，减少表格逐单元格刷新时的闪烁。
+    /// </summary>
+    public static void UpdateWithoutFlicker(Control control, Action update)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        ArgumentNullException.ThrowIfNull(update);
+        if (control.IsDisposed)
+        {
+            return;
+        }
+
+        SendMessage(control.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+        try
+        {
+            update();
+        }
+        finally
+        {
+            SendMessage(control.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+            control.Invalidate(true);
+        }
     }
 
     /// <summary>

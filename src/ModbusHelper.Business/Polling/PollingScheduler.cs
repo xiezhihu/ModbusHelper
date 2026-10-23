@@ -271,6 +271,13 @@ public sealed class PollingScheduler : IAsyncDisposable
         Merge(result, ModbusRequestValidator.ValidateReadCount(task.Function, task.Count));
         Merge(result, ModbusRequestValidator.ValidateAddressRange(task.StartAddress, task.Count));
         Merge(result, ModbusRequestValidator.ValidatePollingInterval(task.IntervalMilliseconds));
+        if (!ModbusDataShapeRules.IsCompatible(task.Function, task.DataType, task.Count))
+        {
+            int required = ModbusDataShapeRules.GetRequiredRegisterCount(task.DataType);
+            result.AddError(
+                $"功能码 {task.Function.GetChineseName()} 使用 {task.DataType} 时，读取数量必须为 {required} 个寄存器。");
+        }
+
         if (!result.IsValid)
         {
             throw new ArgumentException(result.GetErrorMessage(), nameof(task));

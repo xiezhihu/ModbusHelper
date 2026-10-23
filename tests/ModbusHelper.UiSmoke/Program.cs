@@ -222,6 +222,7 @@ internal static class Program
         Button connect = GetField<Button>(form, "_connectButton");
         Label headerStatus = GetField<Label>(form, "_headerStatusLabel");
         tabs.SelectedIndex = 0;
+        CheckManualDataTypeCountConstraints(form);
         if (useRtu)
         {
             SelectComboByText(GetField<ComboBox>(form, "_connectionTypeCombo"), "RTU");
@@ -380,6 +381,43 @@ internal static class Program
         SavePage(form, outputDirectory, "11-从站独立地址基准.png");
         RenderByteOrderProbe(outputDirectory);
         RenderPointTable(outputDirectory);
+    }
+
+    private static void CheckManualDataTypeCountConstraints(Form form)
+    {
+        ComboBox function = GetField<ComboBox>(form, "_manualFunctionCombo");
+        ComboBox dataType = GetField<ComboBox>(form, "_manualDataTypeCombo");
+        NumericUpDown count = GetField<NumericUpDown>(form, "_manualCountInput");
+
+        SelectComboByText(function, "03");
+        SelectComboByText(dataType, "UInt16");
+        if (count.Value != 1 || count.Enabled)
+        {
+            throw new InvalidOperationException(
+                $"UInt16 读取应锁定为 1 个寄存器，实际为 {count.Value}，启用状态={count.Enabled}。");
+        }
+
+        SelectComboByText(dataType, "Float");
+        if (count.Value != 2 || count.Enabled)
+        {
+            throw new InvalidOperationException(
+                $"Float 读取应锁定为 2 个寄存器，实际为 {count.Value}，启用状态={count.Enabled}。");
+        }
+
+        SelectComboByText(dataType, "ASCII");
+        if (!count.Enabled || count.Maximum != 125)
+        {
+            throw new InvalidOperationException("ASCII 读取应允许按需选择多个寄存器。");
+        }
+
+        SelectComboByText(function, "10");
+        if (!count.Enabled || count.Maximum != 123)
+        {
+            throw new InvalidOperationException("写多寄存器的数量应由写入值个数决定，不能被数据类型锁定。");
+        }
+
+        SelectComboByText(function, "03");
+        SelectComboByText(dataType, "UInt16");
     }
 
     private static void CheckHistoryScrollPreservation(

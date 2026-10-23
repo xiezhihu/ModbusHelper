@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 
+using ModbusHelper.Business.Data;
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Protocol;
@@ -38,7 +39,9 @@ internal sealed class PointTableForm : Form
         _addressBase = addressBase;
         foreach (PointConfiguration point in points)
         {
-            _points.Add(Clone(point));
+            PointConfiguration clone = Clone(point);
+            NormalizePointCount(clone);
+            _points.Add(clone);
         }
 
         Text = "点位表";
@@ -145,6 +148,14 @@ internal sealed class PointTableForm : Form
         _grid.DataSource = _points;
         _grid.CellFormatting += OnGridCellFormatting;
         _grid.CellParsing += OnGridCellParsing;
+        _grid.CellValueChanged += OnGridCellValueChanged;
+        _grid.CurrentCellDirtyStateChanged += (_, _) =>
+        {
+            if (_grid.IsCurrentCellDirty)
+            {
+                _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            }
+        };
         _grid.EditingControlShowing += OnGridEditingControlShowing;
         _grid.CellDoubleClick += (_, args) =>
         {
@@ -398,6 +409,39 @@ internal sealed class PointTableForm : Form
             _addressBase,
             point.Function);
         e.ParsingApplied = true;
+    }
+
+    private void OnGridCellValueChanged(
+        object? sender,
+        DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0
+            || _grid.Rows[e.RowIndex].DataBoundItem is not PointConfiguration point)
+        {
+            return;
+        }
+
+        string propertyName = _grid.Columns[e.ColumnIndex].DataPropertyName;
+        if (propertyName is nameof(PointConfiguration.Function)
+            or nameof(PointConfiguration.DataType)
+            or nameof(PointConfiguration.Count))
+        {
+            NormalizePointCount(point);
+        }
+    }
+
+    private static void NormalizePointCount(PointConfiguration point)
+    {
+        if (!ModbusDataShapeRules.IsRegisterRead(point.Function))
+        {
+            return;
+        }
+
+        int required = ModbusDataShapeRules.GetRequiredRegisterCount(point.DataType);
+        if (required > 0)
+        {
+            point.Count = checked((ushort)required);
+        }
     }
 
     private static PointConfiguration Clone(PointConfiguration point)

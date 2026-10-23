@@ -159,6 +159,7 @@ public sealed partial class MainForm
         _connectionTypeCombo.SelectedIndexChanged += (_, _) => UpdateConnectionTypeVisibility();
         _executeManualButton.Click += async (_, _) => await ExecuteManualOperationAsync();
         _manualFunctionCombo.SelectedIndexChanged += (_, _) => UpdateManualFunctionMode();
+        _manualDataTypeCombo.SelectedIndexChanged += (_, _) => UpdateManualCountLimits();
         _manualAddressInput.ValueChanged += (_, _) => UpdateManualCountLimits();
         _addressBaseCombo.SelectedIndexChanged += (_, _) => OnAddressBaseChanged();
     }
@@ -409,12 +410,16 @@ public sealed partial class MainForm
                 $"【{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff}】 {record.Hex}")
             .ToArray();
 
-        _requestHexBox.Text = string.Join(Environment.NewLine, requestLines);
-        _responseHexBox.Text = responseLines.Length > 0
-            ? string.Join(Environment.NewLine, responseLines)
-            : string.IsNullOrWhiteSpace(responseFallback)
-                ? string.Empty
-                : $"【{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff}】 {responseFallback}";
+        UiHelpers.ReplaceTextWithoutFlicker(
+            _requestHexBox,
+            string.Join(Environment.NewLine, requestLines));
+        UiHelpers.ReplaceTextWithoutFlicker(
+            _responseHexBox,
+            responseLines.Length > 0
+                ? string.Join(Environment.NewLine, responseLines)
+                : string.IsNullOrWhiteSpace(responseFallback)
+                    ? string.Empty
+                    : $"【{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff}】 {responseFallback}");
         UiHelpers.RestoreTextBoxScroll(_requestHexBox, requestScrollState);
         UiHelpers.RestoreTextBoxScroll(_responseHexBox, responseScrollState);
     }
@@ -702,11 +707,33 @@ public sealed partial class MainForm
             ModbusFunction.WriteMultipleRegisters => 123,
             _ => 1
         };
-        _manualCountInput.Maximum = maximum;
-        if (_manualCountInput.Value > maximum)
+
+        DataValueType dataType = UiHelpers.GetSelectedValue(
+            _manualDataTypeCombo,
+            DataValueType.UInt16);
+        int required = ModbusDataShapeRules.IsRegisterRead(function)
+            ? ModbusDataShapeRules.GetRequiredRegisterCount(dataType)
+            : 0;
+        if (required > 0)
         {
-            _manualCountInput.Value = maximum;
+            _manualCountInput.Minimum = required;
+            _manualCountInput.Maximum = required;
+            _manualCountInput.Value = required;
         }
+        else
+        {
+            _manualCountInput.Minimum = 1;
+            _manualCountInput.Maximum = maximum;
+            if (_manualCountInput.Value > maximum)
+            {
+                _manualCountInput.Value = maximum;
+            }
+        }
+
+        _manualCountInput.Enabled = function is not (
+            ModbusFunction.WriteSingleCoil
+            or ModbusFunction.WriteSingleRegister)
+            && required == 0;
     }
 
     private void OnAddressBaseChanged()

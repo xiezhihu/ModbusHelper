@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 
+using ModbusHelper.Business.Data;
 using ModbusHelper.Business.Polling;
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
@@ -316,6 +317,7 @@ public sealed partial class MainForm
                 task.Id = Guid.NewGuid().ToString("N");
             }
 
+            NormalizePollingTaskCount(task);
             _pollingTaskBindings.Add(task);
         }
 
@@ -576,12 +578,17 @@ public sealed partial class MainForm
             added = true;
         }
 
-        row.Cells[1].Value = args.Timestamp.ToString(
-            "【yyyy-MM-dd HH:mm:ss.fff】",
-            CultureInfo.InvariantCulture);
-        row.Cells[2].Value = args.ParsedValue;
-        row.Cells[3].Value = args.ElapsedMilliseconds;
-        row.Cells[0].Value = args.Task.Name;
+        UiHelpers.UpdateWithoutFlicker(
+            _liveValueGrid,
+            () =>
+            {
+                row.Cells[1].Value = args.Timestamp.ToString(
+                    "【yyyy-MM-dd HH:mm:ss.fff】",
+                    CultureInfo.InvariantCulture);
+                row.Cells[2].Value = args.ParsedValue;
+                row.Cells[3].Value = args.ElapsedMilliseconds;
+                row.Cells[0].Value = args.Task.Name;
+            });
         if (added)
         {
             UiHelpers.ScrollGridToBottom(_liveValueGrid, followBottom);
@@ -659,6 +666,14 @@ public sealed partial class MainForm
         }
 
         string propertyName = _pollingGrid.Columns[e.ColumnIndex].DataPropertyName;
+        if (propertyName is nameof(PollingTaskConfiguration.Function)
+            or nameof(PollingTaskConfiguration.DataType)
+            or nameof(PollingTaskConfiguration.Count))
+        {
+            NormalizePollingTaskCount(task);
+            return;
+        }
+
         if (string.Equals(
                 propertyName,
                 nameof(PollingTaskConfiguration.ShowInTrend),
@@ -689,6 +704,20 @@ public sealed partial class MainForm
         if (index >= 0)
         {
             _pollingTaskBindings.ResetItem(index);
+        }
+    }
+
+    private static void NormalizePollingTaskCount(PollingTaskConfiguration task)
+    {
+        if (!ModbusDataShapeRules.IsRegisterRead(task.Function))
+        {
+            return;
+        }
+
+        int required = ModbusDataShapeRules.GetRequiredRegisterCount(task.DataType);
+        if (required > 0)
+        {
+            task.Count = checked((ushort)required);
         }
     }
 }
