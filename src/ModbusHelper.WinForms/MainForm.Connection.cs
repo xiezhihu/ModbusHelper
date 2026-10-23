@@ -48,8 +48,8 @@ public sealed partial class MainForm
     private readonly Label _manualWriteDataLabel = UiHelpers.CreateLabel("写入数据");
     private readonly Button _executeManualButton =
         UiHelpers.CreateButton("执行读取", () => { }, 120);
-    private readonly TextBox _requestHexBox = CreateResultTextBox();
-    private readonly TextBox _responseHexBox = CreateResultTextBox();
+    private readonly TextBox _requestHexBox = CreateResultTextBox(history: true);
+    private readonly TextBox _responseHexBox = CreateResultTextBox(history: true);
     private readonly TextBox _parsedValueBox = CreateResultTextBox();
     private readonly Label _elapsedLabel = UiHelpers.CreateLabel("耗时：-- ms");
     private TableLayoutPanel? _manualParameterTable;
@@ -353,18 +353,17 @@ public sealed partial class MainForm
         return group;
     }
 
-    private static TextBox CreateResultTextBox()
+    private static TextBox CreateResultTextBox(bool history = false)
     {
-        return new TextBox
-        {
-            Dock = DockStyle.Fill,
-            Multiline = true,
-            ReadOnly = true,
-            ScrollBars = ScrollBars.Both,
-            WordWrap = false,
-            BackColor = Color.White,
-            Font = new Font("Consolas", 9F)
-        };
+        TextBox textBox = history ? new HistoryTextBox() : new TextBox();
+        textBox.Dock = DockStyle.Fill;
+        textBox.Multiline = true;
+        textBox.ReadOnly = true;
+        textBox.ScrollBars = ScrollBars.Both;
+        textBox.WordWrap = false;
+        textBox.BackColor = Color.White;
+        textBox.Font = new Font("Consolas", 9F);
+        return textBox;
     }
 
     /// <summary>
@@ -385,10 +384,6 @@ public sealed partial class MainForm
         }
 
         _lastRequestHistoryRevision = revision;
-        UiHelpers.TextBoxScrollState requestScrollState =
-            UiHelpers.CaptureTextBoxScrollState(_requestHexBox);
-        UiHelpers.TextBoxScrollState responseScrollState =
-            UiHelpers.CaptureTextBoxScrollState(_responseHexBox);
         IReadOnlyList<ModbusLogRecord> records = _services.LogService.GetSnapshot(
             limit: 5000,
             newestFirst: true);
@@ -410,18 +405,16 @@ public sealed partial class MainForm
                 $"【{record.Timestamp:yyyy-MM-dd HH:mm:ss.fff}】 {record.Hex}")
             .ToArray();
 
-        UiHelpers.ReplaceTextAndRestoreScrollWithoutFlicker(
+        UiHelpers.UpdateTextBoxHistory(
             _requestHexBox,
-            string.Join(Environment.NewLine, requestLines),
-            requestScrollState);
-        UiHelpers.ReplaceTextAndRestoreScrollWithoutFlicker(
+            string.Join(Environment.NewLine, requestLines));
+        UiHelpers.UpdateTextBoxHistory(
             _responseHexBox,
             responseLines.Length > 0
                 ? string.Join(Environment.NewLine, responseLines)
                 : string.IsNullOrWhiteSpace(responseFallback)
                     ? string.Empty
-                    : $"【{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff}】 {responseFallback}",
-            responseScrollState);
+                    : $"【{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff}】 {responseFallback}");
     }
 
     private static TableLayoutPanel AddUnit(Control input, string unit)

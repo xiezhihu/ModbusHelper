@@ -34,9 +34,14 @@ internal static class UiHelpers
     private const uint EmGetFirstVisibleLine = 0x00CE;
     private const uint EmLineScroll = 0x00B6;
     private const uint EmScroll = 0x00B5;
+    private const uint WmHorizontalScroll = 0x0114;
     private const int SbHorizontal = 0;
+    private const int SbThumbPosition = 4;
     private const int SbBottom = 7;
     private const uint WmSetRedraw = 0x000B;
+    private const uint RdwInvalidate = 0x0001;
+    private const uint RdwNoErase = 0x0020;
+    private const uint RdwUpdateNow = 0x0100;
 
     /// <summary>
     /// 多行文本框刷新前的滚动状态。
@@ -270,9 +275,14 @@ internal static class UiHelpers
 
     private static void SetHorizontalScrollPosition(TextBox textBox, int position)
     {
-        if (textBox.IsHandleCreated)
+        if (textBox.IsHandleCreated && GetHorizontalScrollPosition(textBox) != position)
         {
-            _ = SetScrollPos(textBox.Handle, SbHorizontal, Math.Max(0, position), false);
+            int scrollPosition = Math.Clamp(position, 0, ushort.MaxValue);
+            _ = SendMessage(
+                textBox.Handle,
+                WmHorizontalScroll,
+                new IntPtr((scrollPosition << 16) | SbThumbPosition),
+                IntPtr.Zero);
         }
     }
 
@@ -325,11 +335,11 @@ internal static class UiHelpers
     private static extern int GetScrollPos(IntPtr handle, int bar);
 
     [DllImport("user32.dll")]
-    private static extern int SetScrollPos(
+    private static extern bool RedrawWindow(
         IntPtr handle,
-        int bar,
-        int position,
-        bool redraw);
+        IntPtr updateRectangle,
+        IntPtr updateRegion,
+        uint flags);
 
     /// <summary>
     /// 按调用前记录的底部状态滚动到最新内容。历史区域统一按时间正序追加，
@@ -363,88 +373,90 @@ internal static class UiHelpers
             ScrollTextBoxToLine(textBox, targetLine);
         }
 
-        textBox.SelectionStart = textBox.TextLength;
-        textBox.SelectionLength = 0;
         SetHorizontalScrollPosition(textBox, horizontalScrollPosition);
     }
 
     /// <summary>
-    /// 在禁止重绘期间替换文本，减少历史区域刷新时的闪烁。
+    /// 只追加历史快照中的新文本，超出容量时只移除过期前缀。
+    /// 合并编辑与滚动，直接绘制最终内容，避免全量赋值及先擦背景造成闪烁。
     /// </summary>
-    public static void ReplaceTextWithoutFlicker(TextBox textBox, string text)
+    public static void UpdateTextBoxHistory(TextBox textBox, string text)
     {
         if (textBox.IsDisposed)
         {
             return;
         }
 
-        if (string.Equals(textBox.Text, text, StringComparison.Ordinal))
+        string previousText = textBox.Text;
+        if (string.Equals(previousText, text, StringComparison.Ordinal))
         {
             return;
         }
 
-        SendMessage(textBox.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+        int removedCharacters = 0;
+        int removedLines = 0;
+        while (!text.AsSpan().StartsWith(previousText.AsSpan(removedCharacters), StringComparison.Ordinal))
+        {
+            int lineEnd = previousText.IndexOf('\n', removedCharacters);
+            if (lineEnd < 0)
+            {
+                removedCharacters = previousText.Length;
+                break;
+            }
+
+            removedCharacters = lineEnd + 1;
+            removedLines++;
+        }
+
+        TextBoxScrollState scrollState = CaptureTextBoxScrollState(textBox);
+        int selectionStart = textBox.SelectionStart;
+        int selectionEnd = selectionStart + textBox.SelectionLength;
+        bool moveCaretToEnd = scrollState.FollowBottom && textBox.SelectionLength == 0;
+        int retainedCharacters = previousText.Length - removedCharacters;
+        bool suspendRedraw = textBox.IsHandleCreated && textBox.Visible;
+
+        if (suspendRedraw)
+        {
+            _ = SendMessage(textBox.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
+        }
+
         try
         {
-            textBox.Text = text;
+            if (removedCharacters > 0)
+            {
+                textBox.Select(0, removedCharacters);
+                textBox.SelectedText = string.Empty;
+            }
+
+            if (text.Length > retainedCharacters)
+            {
+                textBox.AppendText(text[retainedCharacters..]);
+            }
+
+            int restoredStart = moveCaretToEnd
+                ? textBox.TextLength
+                : Math.Clamp(selectionStart - removedCharacters, 0, textBox.TextLength);
+            int restoredEnd = moveCaretToEnd
+                ? restoredStart
+                : Math.Clamp(selectionEnd - removedCharacters, restoredStart, textBox.TextLength);
+            textBox.Select(restoredStart, restoredEnd - restoredStart);
+            RestoreTextBoxScroll(textBox, scrollState with
+            {
+                FirstVisibleLine = Math.Max(0, scrollState.FirstVisibleLine - removedLines)
+            });
         }
         finally
         {
-            SendMessage(textBox.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
-            textBox.Invalidate(false);
-        }
-    }
-
-    /// <summary>
-    /// 在同一次禁止重绘期间替换文本并恢复滚动位置，避免文本重绘和滚动重绘各闪一次。
-    /// </summary>
-    public static void ReplaceTextAndRestoreScrollWithoutFlicker(
-        TextBox textBox,
-        string text,
-        TextBoxScrollState scrollState)
-    {
-        if (textBox.IsDisposed)
-        {
-            return;
-        }
-
-        if (string.Equals(textBox.Text, text, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        SendMessage(textBox.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
-        try
-        {
-            textBox.Text = text;
-            RestoreTextBoxScroll(textBox, scrollState);
-        }
-        finally
-        {
-            SendMessage(textBox.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
-            textBox.Invalidate(false);
-        }
-    }
-
-    /// <summary>
-    /// 在禁止重绘期间追加文本，适用于历史区域只增加末尾记录的场景。
-    /// </summary>
-    public static void AppendTextWithoutFlicker(TextBox textBox, string text)
-    {
-        if (textBox.IsDisposed || string.IsNullOrEmpty(text))
-        {
-            return;
-        }
-
-        SendMessage(textBox.Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
-        try
-        {
-            textBox.AppendText(text);
-        }
-        finally
-        {
-            SendMessage(textBox.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
-            textBox.Invalidate(false);
+            if (suspendRedraw)
+            {
+                _ = SendMessage(textBox.Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
+                // 合并为一次直接绘制，不先清空整个背景，也不刷新父容器。
+                _ = RedrawWindow(
+                    textBox.Handle,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    RdwInvalidate | RdwNoErase | RdwUpdateNow);
+            }
         }
     }
 

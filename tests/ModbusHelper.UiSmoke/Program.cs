@@ -283,6 +283,10 @@ internal static class Program
         }
 
         CheckHistoryScrollPreservation(form, execute, request);
+        object services = GetField<object>(form, "_services");
+        ModbusLogService logService = (ModbusLogService)services.GetType()
+            .GetProperty("LogService")!.GetValue(services)!;
+        HistoryTextBoxChecks.Run(form, tabs, logService);
 
         BindingList<PollingTaskConfiguration> tasks = GetField<
             BindingList<PollingTaskConfiguration>>(form, "_pollingTaskBindings");
@@ -357,6 +361,9 @@ internal static class Program
         Pump(TimeSpan.FromMilliseconds(useRtu ? 1200 : 700));
 
         tabs.SelectedIndex = 0;
+        PumpUntil(
+            () => !string.IsNullOrWhiteSpace(request.Text) && !string.IsNullOrWhiteSpace(response.Text),
+            TimeSpan.FromSeconds(3));
         if (string.IsNullOrWhiteSpace(request.Text) || string.IsNullOrWhiteSpace(response.Text))
         {
             throw new InvalidOperationException("轮询任务未刷新主站收发报文历史。");

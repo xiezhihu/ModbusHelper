@@ -56,8 +56,8 @@ public sealed partial class MainForm
     private readonly NumericUpDown _slaveManualCountInput =
         UiHelpers.CreateNumber(1, 2000, 1);
     private readonly TextBox _slaveManualValuesInput = UiHelpers.CreateTextBox();
-    private readonly TextBox _slaveManualResultBox = CreateResultTextBox();
-    private readonly TextBox _slaveFrameBox = CreateResultTextBox();
+    private readonly TextBox _slaveManualResultBox = CreateResultTextBox(history: true);
+    private readonly TextBox _slaveFrameBox = CreateResultTextBox(history: true);
     private SlaveArea _slaveManualCurrentArea = SlaveArea.HoldingRegisters;
     private TableLayoutPanel? _slaveRootLayout;
     private GroupBox? _slaveEndpointGroup;
@@ -1651,8 +1651,6 @@ public sealed partial class MainForm
 
     private void AppendSlaveManualHistory(string message)
     {
-        UiHelpers.TextBoxScrollState scrollState =
-            UiHelpers.CaptureTextBoxScrollState(_slaveManualResultBox);
         string entry = $"【{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}】 {message}";
         _slaveManualHistory.AddLast(entry);
         while (_slaveManualHistory.Count > 100)
@@ -1660,10 +1658,9 @@ public sealed partial class MainForm
             _slaveManualHistory.RemoveFirst();
         }
 
-        _slaveManualResultBox.Text = string.Join(
-            Environment.NewLine + Environment.NewLine,
-            _slaveManualHistory);
-        UiHelpers.RestoreTextBoxScroll(_slaveManualResultBox, scrollState);
+        UiHelpers.UpdateTextBoxHistory(
+            _slaveManualResultBox,
+            string.Join(Environment.NewLine + Environment.NewLine, _slaveManualHistory));
     }
 
     private static string FormatSlaveValues(object values)
@@ -1729,8 +1726,6 @@ public sealed partial class MainForm
         }
 
         _lastSlaveFrameRevision = revision;
-        UiHelpers.TextBoxScrollState scrollState =
-            UiHelpers.CaptureTextBoxScrollState(_slaveFrameBox);
         IReadOnlyList<ModbusLogRecord> records = _services.LogService.GetSnapshot(
             ModbusLogLevel.Debug,
             limit: 500,
@@ -1741,12 +1736,11 @@ public sealed partial class MainForm
                 .Take(200)
                 .Reverse()
                 .Select(FormatSlaveFrameHistoryLine));
-        UiHelpers.ReplaceTextAndRestoreScrollWithoutFlicker(
+        UiHelpers.UpdateTextBoxHistory(
             _slaveFrameBox,
             string.IsNullOrWhiteSpace(frameText)
                 ? "暂无从站报文记录。"
-                : frameText,
-            scrollState);
+                : frameText);
     }
 
     private static string FormatSlaveFrameHistoryLine(ModbusLogRecord record)
