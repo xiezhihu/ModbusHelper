@@ -410,21 +410,48 @@ internal static class Program
             throw new InvalidOperationException("滚动位置回归测试未生成足够的请求历史。");
         }
 
+        Type uiHelpers = form.GetType().Assembly.GetType(
+            "ModbusHelper.WinForms.UiHelpers",
+            throwOnError: true)!;
+        MethodInfo isTextBoxAtBottom = uiHelpers.GetMethod(
+            "IsTextBoxAtBottom",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!;
+        request.SelectionStart = request.TextLength;
+        request.SelectionLength = 0;
+        request.ScrollToCaret();
+        Pump(TimeSpan.FromMilliseconds(100));
+        if (!(bool)isTextBoxAtBottom.Invoke(null, [request])!
+            || !IsLastCharacterVisible(request))
+        {
+            throw new InvalidOperationException(
+                $"滚动到底部后，界面未识别出当前位于底部。"
+                + $"首行={GetFirstVisibleLine(request)}，行数={request.Lines.Length}。");
+        }
+
+        int beforeBottomLine = GetFirstVisibleLine(request);
+        int previousLength = request.TextLength;
+        AddTestRequest(logService);
+        PumpUntil(
+            () => request.TextLength > previousLength,
+            TimeSpan.FromSeconds(3));
+        Pump(TimeSpan.FromMilliseconds(100));
+        if (!IsLastCharacterVisible(request))
+        {
+            throw new InvalidOperationException("新请求到达后，历史没有自动滚动到底部。");
+        }
+
+        Console.WriteLine(
+            $"已验证请求历史底部自动跟随：刷新前首行 {beforeBottomLine}，刷新后首行 {GetFirstVisibleLine(request)}。");
+
         int targetLine = Math.Min(30, request.Lines.Length - 1);
         request.SelectionStart = request.GetFirstCharIndexFromLine(targetLine);
         request.SelectionLength = 0;
         request.ScrollToCaret();
         Pump(TimeSpan.FromMilliseconds(100));
         int beforeFirstLine = GetFirstVisibleLine(request);
-        int previousLength = request.TextLength;
+        previousLength = request.TextLength;
 
-        logService.AddFrame(new RawFrameRecord(
-            DateTimeOffset.Now,
-            ModbusRole.Master,
-            DataDirection.Tx,
-            "01 03 00 00 00 01 84 0A",
-            "滚动位置回归测试请求",
-            null));
+        AddTestRequest(logService);
         PumpUntil(
             () => request.TextLength > previousLength,
             TimeSpan.FromSeconds(3));
@@ -440,10 +467,34 @@ internal static class Program
             $"已验证请求历史非底部刷新保持位置：刷新前首行 {beforeFirstLine}，刷新后首行 {afterFirstLine}。");
     }
 
+    private static void AddTestRequest(ModbusLogService logService)
+    {
+        logService.AddFrame(new RawFrameRecord(
+            DateTimeOffset.Now,
+            ModbusRole.Master,
+            DataDirection.Tx,
+            "01 03 00 00 00 01 84 0A",
+            "滚动位置回归测试请求",
+            null));
+    }
+
     private static int GetFirstVisibleLine(TextBox textBox)
     {
         int charIndex = textBox.GetCharIndexFromPosition(new Point(1, 1));
         return charIndex < 0 ? 0 : textBox.GetLineFromCharIndex(charIndex);
+    }
+
+    private static bool IsLastCharacterVisible(TextBox textBox)
+    {
+        if (textBox.TextLength == 0)
+        {
+            return true;
+        }
+
+        Point lastCharacterPosition =
+            textBox.GetPositionFromCharIndex(textBox.TextLength - 1);
+        return lastCharacterPosition.Y >= 0
+            && lastCharacterPosition.Y + textBox.Font.Height <= textBox.ClientSize.Height;
     }
 
     private static void CheckIndependentSlaveAddressBases(Form form)

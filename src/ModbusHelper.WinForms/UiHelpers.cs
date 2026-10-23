@@ -157,13 +157,8 @@ internal static class UiHelpers
         try
         {
             Point lastCharacterPosition = textBox.GetPositionFromCharIndex(textBox.TextLength - 1);
-            int visibleHeight = textBox.ClientSize.Height;
-            if (textBox.ScrollBars is ScrollBars.Horizontal or ScrollBars.Both)
-            {
-                visibleHeight -= SystemInformation.HorizontalScrollBarHeight;
-            }
-
-            return lastCharacterPosition.Y + textBox.Font.Height <= visibleHeight + Scale(textBox, 2);
+            return lastCharacterPosition.Y + textBox.Font.Height
+                <= textBox.ClientSize.Height + Scale(textBox, 2);
         }
         catch (ArgumentOutOfRangeException)
         {
