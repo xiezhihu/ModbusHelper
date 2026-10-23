@@ -688,6 +688,7 @@ public sealed partial class MainForm
                 nameof(PollingTaskConfiguration.ShowInTrend),
                 StringComparison.Ordinal))
         {
+            _services.PollingScheduler.SetTrendCollectionEnabled(task.Id, task.ShowInTrend);
             RebuildTrendSeries();
             return;
         }

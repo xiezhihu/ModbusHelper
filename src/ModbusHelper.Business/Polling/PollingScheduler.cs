@@ -109,6 +109,24 @@ public sealed class PollingScheduler : IAsyncDisposable
     }
 
     /// <summary>
+    /// 即时更新运行中任务的趋势采集开关，不改变轮询状态和通信参数。
+    /// </summary>
+    /// <param name="taskId">任务标识。</param>
+    /// <param name="enabled">是否采集后续成功读取的趋势样本。</param>
+    public void SetTrendCollectionEnabled(string taskId, bool enabled)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
+        lock (_syncRoot)
+        {
+            if (_tasks.TryGetValue(taskId, out RuntimeTask? runtime))
+            {
+                runtime.Configuration.ShowInTrend = enabled;
+            }
+        }
+    }
+
+    /// <summary>
     /// 停止单个任务。
     /// </summary>
     /// <param name="taskId">任务标识。</param>
@@ -244,12 +262,15 @@ public sealed class PollingScheduler : IAsyncDisposable
         }
 
         DateTimeOffset timestamp = result.Timestamp;
-        if (task.ShowInTrend)
+        lock (_syncRoot)
         {
-            _trendStore.GetOrCreate(task).Append(new TrendSample(
-                timestamp,
-                numericValue,
-                parsedValue));
+            if (task.ShowInTrend)
+            {
+                _trendStore.GetOrCreate(task).Append(new TrendSample(
+                    timestamp,
+                    numericValue,
+                    parsedValue));
+            }
         }
 
         SampleReceived?.Invoke(

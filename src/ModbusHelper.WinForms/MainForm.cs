@@ -277,7 +277,11 @@ public sealed partial class MainForm : Form
             "03/04 读取时固定数值类型会自动匹配数量：16 位为 1 个、32 位为 2 个、Double 为 4 个；"
             + "字符串数量可变。01/02 的数量按位计算。");
         SetGridToolTip(_pollingGrid, "字节序", "ABCD、CDAB、BADC、DCBA 四种寄存器与字节排列方式。");
-        SetGridToolTip(_pollingGrid, "趋势", "勾选后将任务采样结果写入趋势数据缓冲区。");
+        SetGridToolTip(
+            _pollingGrid,
+            "趋势",
+            "运行中修改即时生效，无需重启任务。勾选后从下一次成功读取开始采集趋势数据；"
+            + "取消后轮询继续，但不再采集趋势数据，关闭期间的数据不会补采。");
         SetGridToolTip(_pollingGrid, "运行", "当前任务是否正在由轮询调度器执行。");
 
         SetToolTip(_slaveTypeCombo, "选择 RTU 串口从站或 TCP 网络从站。");

@@ -357,8 +357,11 @@ internal static class Program
 
         Button startAll = FindButton(tabs, "启动全部")
             ?? throw new InvalidOperationException("未找到启动全部按钮。");
+        PollingTaskConfiguration dynamicTrendTask = tasks[useRtu ? 0 : 1];
+        dynamicTrendTask.ShowInTrend = false;
         startAll.PerformClick();
         Pump(TimeSpan.FromMilliseconds(useRtu ? 1200 : 700));
+        TrendCollectionChecks.Run(form, tabs, pollingGrid, dynamicTrendTask);
 
         tabs.SelectedIndex = 0;
         PumpUntil(
