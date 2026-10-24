@@ -3,18 +3,21 @@ using System.Globalization;
 
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
+using ModbusHelper.Core.Models;
 using ModbusHelper.Core.Protocol;
 
 namespace ModbusHelper.WinForms;
 
 /// <summary>
-/// 仅 UI 使用的从站初始数据明细编辑窗口。
+/// 仅 UI 使用的从站数据明细窗口：停止时编辑初始值，运行时只读查看当前值。
 /// 主表只显示摘要，本窗口按存储区将每个地址拆成独立行，便于查看大量数据。
 /// </summary>
 internal sealed class SlaveInitialDataForm : Form
 {
     private readonly AddressBase _addressBase;
     private readonly SlaveUnitConfiguration _source;
+    private readonly Func<SlaveUnitDataSnapshot?>? _snapshotProvider;
+    private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 500 };
     private readonly TabControl _areaTabs = new();
     private readonly Dictionary<SlaveArea, BindingList<ValueRow>> _rows = new();
     private readonly Dictionary<SlaveArea, DataGridView> _grids = new();
@@ -32,13 +35,25 @@ internal sealed class SlaveInitialDataForm : Form
         SlaveUnitConfiguration source,
         AddressBase addressBase,
         SlaveArea selectedArea)
+        : this(source, addressBase, selectedArea, null)
+    {
+    }
+
+    public SlaveInitialDataForm(
+        SlaveUnitConfiguration source,
+        AddressBase addressBase,
+        SlaveArea selectedArea,
+        Func<SlaveUnitDataSnapshot?>? snapshotProvider)
     {
         _source = source;
         _addressBase = addressBase;
+        _snapshotProvider = snapshotProvider;
         _validationLabel.TextChanged += (_, _) =>
             _validationLabel.Visible = !string.IsNullOrWhiteSpace(_validationLabel.Text);
         AutoScaleMode = AutoScaleMode.Dpi;
-        Text = $"从站 {source.UnitId} 初始数据";
+        Text = snapshotProvider is null
+            ? $"从站 {source.UnitId} 初始数据"
+            : $"从站 {source.UnitId} 当前数据（只读）";
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(760, 560);
         MinimumSize = new Size(620, 440);
@@ -48,6 +63,12 @@ internal sealed class SlaveInitialDataForm : Form
         BuildRows();
         BuildLayout();
         _areaTabs.SelectedIndex = AreaIndex(selectedArea);
+        if (snapshotProvider is not null)
+        {
+            RefreshRuntimeData();
+            _refreshTimer.Tick += (_, _) => RefreshRuntimeData();
+            _refreshTimer.Start();
+        }
     }
 
     /// <summary>应用后的完整四区配置。</summary>
@@ -55,6 +76,16 @@ internal sealed class SlaveInitialDataForm : Form
 
     private void BuildRows()
     {
+        if (_snapshotProvider is not null)
+        {
+            foreach (SlaveArea area in Enum.GetValues<SlaveArea>())
+            {
+                _rows[area] = new BindingList<ValueRow>();
+            }
+
+            return;
+        }
+
         _rows[SlaveArea.HoldingRegisters] = new BindingList<ValueRow>(
             _source.HoldingRegisters.Select(value => new ValueRow
             {
@@ -113,7 +144,9 @@ internal sealed class SlaveInitialDataForm : Form
             AutoSize = true,
             Dock = DockStyle.Fill,
             Text = $"当前从站地址基准：{(_addressBase == AddressBase.ZeroBased ? "0 基" : "1 基（手册地址）")}。"
-                + "每行一个地址和值；按 Ctrl/Shift 可多选删除。",
+                + (_snapshotProvider is null
+                    ? "每行一个地址和值；按 Ctrl/Shift 可多选删除。"
+                    : "当前运行数据（只读），每 0.5 秒刷新。"),
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = Color.DimGray,
             Margin = new Padding(4, 4, 4, 8)
@@ -138,14 +171,17 @@ internal sealed class SlaveInitialDataForm : Form
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false
         };
-        Button cancelButton = UiHelpers.CreateButton("取消", () => DialogResult = DialogResult.Cancel, 88);
+        Button cancelButton = UiHelpers.CreateButton(
+            _snapshotProvider is null ? "取消" : "关闭", () => DialogResult = DialogResult.Cancel, 88);
         cancelButton.CausesValidation = false;
         _applyButton.Click += (_, _) => ApplyAndClose();
+        _applyButton.Visible = _snapshotProvider is null;
+        _applyButton.Enabled = _snapshotProvider is null;
         footer.Controls.Add(cancelButton);
         footer.Controls.Add(_applyButton);
         root.Controls.Add(footer, 0, 3);
         Controls.Add(root);
-        AcceptButton = _applyButton;
+        AcceptButton = _snapshotProvider is null ? _applyButton : cancelButton;
         CancelButton = cancelButton;
     }
 
@@ -180,9 +216,12 @@ internal sealed class SlaveInitialDataForm : Form
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true
         };
-        toolbar.Controls.Add(UiHelpers.CreateButton("新增行", () => AddRow(area), 84));
-        toolbar.Controls.Add(UiHelpers.CreateButton("删除行", () => DeleteRow(area), 84));
-        toolbar.Controls.Add(UiHelpers.CreateButton("清空区域", () => ClearRows(area), 92));
+        if (_snapshotProvider is null)
+        {
+            toolbar.Controls.Add(UiHelpers.CreateButton("新增行", () => AddRow(area), 84));
+            toolbar.Controls.Add(UiHelpers.CreateButton("删除行", () => DeleteRow(area), 84));
+            toolbar.Controls.Add(UiHelpers.CreateButton("清空区域", () => ClearRows(area), 92));
+        }
         Label countLabel = UiHelpers.CreateLabel(string.Empty);
         _countLabels[area] = countLabel;
         toolbar.Controls.Add(countLabel);
@@ -200,6 +239,7 @@ internal sealed class SlaveInitialDataForm : Form
             BackgroundColor = Color.White,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             MultiSelect = true,
+            ReadOnly = _snapshotProvider is not null,
             ShowCellToolTips = true,
             DataSource = _rows[area]
         };
@@ -224,9 +264,13 @@ internal sealed class SlaveInitialDataForm : Form
             MinimumWidth = UiHelpers.Scale(grid, 180)
         });
         grid.Columns[0].HeaderCell.ToolTipText =
-            "按当前从站地址基准输入，例如保持寄存器 1 基地址 40001。";
+            _snapshotProvider is null
+                ? "按当前从站地址基准输入，例如保持寄存器 1 基地址 40001。"
+                : "按当前从站地址基准显示的地址。";
         grid.Columns[1].HeaderCell.ToolTipText =
-            area is SlaveArea.Coils or SlaveArea.DiscreteInputs
+            _snapshotProvider is not null
+                ? "当前模拟内存值（只读）。"
+                : area is SlaveArea.Coils or SlaveArea.DiscreteInputs
                 ? "可输入 ON/OFF、1/0。"
                 : "可输入十进制或 0x 开头的十六进制值。";
         grid.DataError += (_, e) =>
@@ -251,7 +295,9 @@ internal sealed class SlaveInitialDataForm : Form
             {
                 e.ToolTipText = e.ColumnIndex == 0
                     ? "地址按当前从站地址基准显示。"
-                    : area is SlaveArea.Coils or SlaveArea.DiscreteInputs
+                    : _snapshotProvider is not null
+                        ? "当前模拟内存值（只读），运行期间自动刷新。"
+                        : area is SlaveArea.Coils or SlaveArea.DiscreteInputs
                         ? "线圈和离散输入可输入 ON/OFF、1/0。"
                         : "寄存器可输入十进制或 0x 开头的十六进制值。";
             }
@@ -344,6 +390,11 @@ internal sealed class SlaveInitialDataForm : Form
 
     private void ApplyAndClose()
     {
+        if (_snapshotProvider is not null)
+        {
+            return;
+        }
+
         try
         {
             if (!CommitPendingEdits())
@@ -395,7 +446,90 @@ internal sealed class SlaveInitialDataForm : Form
     private void UpdateAreaCount(SlaveArea area)
     {
         int count = _rows[area].Count;
-        _countLabels[area].Text = count == 0 ? "暂无预置值" : $"共 {count} 个地址";
+        _countLabels[area].Text = count == 0
+            ? _snapshotProvider is null ? "暂无预置值" : "暂无已写入的数据"
+            : $"共 {count} 个地址";
+    }
+
+    private void RefreshRuntimeData()
+    {
+        if (_snapshotProvider?.Invoke() is not { } snapshot)
+        {
+            _refreshTimer.Stop();
+            Text = $"从站 {_source.UnitId} 当前数据（已停止，保留最后一次显示）";
+            return;
+        }
+
+        UpdateRuntimeRows(SlaveArea.HoldingRegisters, snapshot.HoldingRegisters.Select(value =>
+            CreateRuntimeRow(SlaveArea.HoldingRegisters, value.Address, value.Value.ToString(CultureInfo.InvariantCulture))));
+        UpdateRuntimeRows(SlaveArea.InputRegisters, snapshot.InputRegisters.Select(value =>
+            CreateRuntimeRow(SlaveArea.InputRegisters, value.Address, value.Value.ToString(CultureInfo.InvariantCulture))));
+        UpdateRuntimeRows(SlaveArea.Coils, snapshot.Coils.Select(value =>
+            CreateRuntimeRow(SlaveArea.Coils, value.Address, value.Value ? "ON" : "OFF")));
+        UpdateRuntimeRows(SlaveArea.DiscreteInputs, snapshot.DiscreteInputs.Select(value =>
+            CreateRuntimeRow(SlaveArea.DiscreteInputs, value.Address, value.Value ? "ON" : "OFF")));
+    }
+
+    private ValueRow CreateRuntimeRow(SlaveArea area, ushort address, string value)
+    {
+        return new ValueRow
+        {
+            Address = ModbusAddressConverter.ToDisplayAddress(address, _addressBase, ToFunction(area)),
+            Value = value
+        };
+    }
+
+    private void UpdateRuntimeRows(SlaveArea area, IEnumerable<ValueRow> values)
+    {
+        BindingList<ValueRow> rows = _rows[area];
+        DataGridView grid = _grids[area];
+        int firstIndex = grid.FirstDisplayedScrollingRowIndex;
+        ValueRow? firstRow = firstIndex >= 0 ? rows[firstIndex] : null;
+        int horizontalOffset = grid.HorizontalScrollingOffset;
+        int index = 0;
+        foreach (ValueRow value in values)
+        {
+            if (index < rows.Count && rows[index].Address == value.Address)
+            {
+                if (rows[index].Value != value.Value)
+                {
+                    rows[index].Value = value.Value;
+                    rows.ResetItem(index);
+                }
+            }
+            else
+            {
+                rows.Insert(index, value);
+            }
+
+            index++;
+        }
+
+        while (rows.Count > index)
+        {
+            rows.RemoveAt(rows.Count - 1);
+        }
+
+        // 不重绑数据源；已有地址只更新对应行，并保留用户查看位置。
+        if (firstRow is not null && grid.Visible && rows.IndexOf(firstRow) is int restoredIndex && restoredIndex >= 0)
+        {
+            grid.FirstDisplayedScrollingRowIndex = restoredIndex;
+        }
+
+        if (grid.HorizontalScrollingOffset != horizontalOffset)
+        {
+            grid.HorizontalScrollingOffset = horizontalOffset;
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _refreshTimer.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     private List<RegisterInitialValue> ParseRegisters(SlaveArea area)

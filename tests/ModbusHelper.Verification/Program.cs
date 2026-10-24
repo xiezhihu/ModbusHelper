@@ -10,6 +10,7 @@ using ModbusHelper.Business.Connections;
 using ModbusHelper.Business.Data;
 using ModbusHelper.Business.Logging;
 using ModbusHelper.Business.Polling;
+using ModbusHelper.Business.Slaves;
 using ModbusHelper.Business.Statistics;
 using ModbusHelper.Business.Trends;
 using ModbusHelper.Communication.Capturing;
@@ -42,6 +43,7 @@ await RunAsync("SPSC 环形缓冲区", TestSpscRingBuffer);
 await RunAsync("通信统计", TestStatistics);
 await RunAsync("TCP 主从自环", TestTcpSelfLoop);
 await RunAsync("从站随机数据", TestSlaveRandomData);
+await RunAsync("从站运行数据快照", TestSlaveDataSnapshot);
 await RunAsync("两层超时", TestTimeoutLayers);
 int rtuArgumentIndex = Array.FindIndex(
     args,
@@ -531,6 +533,14 @@ static async Task TestTcpSelfLoop()
     await service.WriteMultipleCoilsAsync(1, 5, expectedCoils);
     ModbusOperationResult writtenCoils = await service.ReadCoilsAsync(1, 5, 4);
     True(writtenCoils.Coils!.SequenceEqual(expectedCoils), "多线圈写入结果不一致。");
+    await service.WriteSingleCoilAsync(1, 15, true);
+    SlaveUnitDataSnapshot snapshot = simulator.GetDataSnapshot(1)!;
+    Equal((ushort)4321, snapshot.HoldingRegisters.Single(value => value.Address == 10).Value);
+    True(snapshot.HoldingRegisters.Where(value => value.Address is >= 20 and <= 22)
+        .Select(value => value.Value).SequenceEqual(expectedBlock), "快照没有同步主站多寄存器写入。");
+    True(snapshot.Coils.Where(value => value.Address is >= 5 and <= 8)
+        .Select(value => value.Value).SequenceEqual(expectedCoils), "快照没有同步主站多线圈写入。");
+    True(snapshot.Coils.Single(value => value.Address == 15).Value, "快照没有记录主站单线圈写入的新地址。");
 
     ModbusOperationResult unit2 = await service.ReadHoldingRegistersAsync(2, 0, 1);
     Equal((ushort)7777, unit2.Registers![0]);
@@ -759,6 +769,9 @@ static async Task TestSlaveRandomData()
         1);
     Equal((ushort)123, startupValue[0]);
     Equal((ushort)456, runningValue[0]);
+    SlaveUnitDataSnapshot snapshot = simulator.GetDataSnapshot(1)!;
+    Equal((ushort)123, snapshot.HoldingRegisters[0].Value);
+    Equal((ushort)456, snapshot.InputRegisters[0].Value);
 
     await simulator.StopAsync();
     await simulator.StartAsync(configuration);
@@ -769,6 +782,78 @@ static async Task TestSlaveRandomData()
         1);
     Equal((ushort)0, resetValue[0]);
     await simulator.StopAsync();
+}
+
+static async Task TestSlaveDataSnapshot()
+{
+    SlaveSimulationConfiguration configuration = new()
+    {
+        Type = ConnectionType.Tcp,
+        Tcp = new TcpSlaveConfiguration { ListenAddress = "127.0.0.1", Port = GetFreeTcpPort() },
+        Units =
+        {
+            new SlaveUnitConfiguration
+            {
+                UnitId = 1,
+                HoldingRegisters = { new() { Address = 0, Value = 10 } },
+                InputRegisters = { new() { Address = 0, Value = 30 } },
+                Coils = { new() { Address = 0, Value = false } },
+                DiscreteInputs = { new() { Address = 0, Value = true } }
+            },
+            new SlaveUnitConfiguration
+            {
+                UnitId = 2,
+                HoldingRegisters = { new() { Address = 0, Value = 99 } }
+            }
+        }
+    };
+    await using SlaveSimulationManager manager = new(new ModbusLogService());
+    True(manager.GetDataSnapshot(1) is null, "未启动时不应显示运行数据。");
+    await manager.StartAsync(configuration);
+    SlaveUnitDataSnapshot before = manager.GetDataSnapshot(1)!;
+    manager.WriteValues(1, SlaveArea.HoldingRegisters, 0, new ushort[] { 20, 21 });
+    manager.WriteValues(1, SlaveArea.InputRegisters, 1, new ushort[] { 31 });
+    bool[] onValues = { true };
+    bool[] offValues = { false };
+    manager.WriteValues(1, SlaveArea.Coils, 1, onValues);
+    manager.WriteValues(1, SlaveArea.DiscreteInputs, 1, offValues);
+    manager.WriteValues(1, SlaveArea.HoldingRegisters, ushort.MaxValue, new ushort[] { 65535 });
+    SlaveUnitDataSnapshot after = manager.GetDataSnapshot(1)!;
+    Equal((ushort)10, before.HoldingRegisters[0].Value);
+    Equal((ushort)20, after.HoldingRegisters[0].Value);
+    Equal((ushort)21, after.HoldingRegisters[1].Value);
+    Equal(ushort.MaxValue, after.HoldingRegisters[^1].Address);
+    Equal((ushort)31, after.InputRegisters[1].Value);
+    True(after.Coils[1].Value);
+    False(after.DiscreteInputs[1].Value);
+    Equal((ushort)99, manager.GetDataSnapshot(2)!.HoldingRegisters[0].Value);
+    after.HoldingRegisters[0].Value = 999;
+    Equal((ushort)20, manager.GetDataSnapshot(1)!.HoldingRegisters[0].Value);
+    Equal((ushort)10, configuration.Units[0].HoldingRegisters[0].Value);
+    Equal(1, configuration.Units[0].HoldingRegisters.Count);
+
+    await Task.WhenAll(
+        Task.Run(() =>
+        {
+            for (int index = 0; index < 200; index++)
+            {
+                manager.WriteValues(1, SlaveArea.HoldingRegisters, 5, new ushort[] { (ushort)index });
+            }
+        }),
+        Task.Run(() =>
+        {
+            for (int index = 0; index < 200; index++)
+            {
+                True(manager.GetDataSnapshot(1)!.HoldingRegisters.Count >= 3);
+            }
+        }));
+    await manager.StopAsync();
+    True(manager.GetDataSnapshot(1) is null);
+    await manager.StartAsync(configuration);
+    SlaveUnitDataSnapshot restarted = manager.GetDataSnapshot(1)!;
+    Equal(1, restarted.HoldingRegisters.Count);
+    Equal((ushort)10, restarted.HoldingRegisters[0].Value);
+    await manager.StopAsync();
 }
 
 static async Task TestTimeoutLayers()

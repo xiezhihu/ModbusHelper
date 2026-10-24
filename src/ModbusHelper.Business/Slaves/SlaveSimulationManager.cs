@@ -149,6 +149,12 @@ public sealed class SlaveSimulationManager : IAsyncDisposable
         return _simulator.ReadValues(unitId, area, startAddress, count);
     }
 
+    /// <summary>读取从站当前数据副本，包含初始、手动、随机和主站写入的地址；不修改启动配置。</summary>
+    public SlaveUnitDataSnapshot? GetDataSnapshot(byte unitId)
+    {
+        return _simulator.GetDataSnapshot(unitId);
+    }
+
     private void OnFrameCaptured(RawFrameRecord frame)
     {
         _logService.AddFrame(frame);

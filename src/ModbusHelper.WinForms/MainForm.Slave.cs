@@ -6,6 +6,7 @@ using ModbusHelper.Business.Logging;
 using ModbusHelper.Business.Slaves;
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
+using ModbusHelper.Core.Models;
 using ModbusHelper.Core.Protocol;
 
 namespace ModbusHelper.WinForms;
@@ -45,6 +46,8 @@ public sealed partial class MainForm
     private readonly DataGridView _slaveUnitGrid = new();
     private readonly DataGridView _slaveRuleGrid = new();
     private readonly BindingList<SlaveUnitEditor> _slaveUnitEditors = new();
+    private readonly Dictionary<byte, SlaveUnitEditor> _slaveRuntimeViews = new();
+    private long _lastSlaveDataRefresh;
     private readonly BindingList<ExceptionRuleEditor> _slaveRuleEditors = new();
     private List<SlaveRandomDataRule> _slaveRandomRules = new();
     private readonly LinkedList<string> _slaveManualHistory = new();
@@ -730,6 +733,7 @@ public sealed partial class MainForm
             : message.Contains("错误", StringComparison.Ordinal)
                 ? Color.DarkRed
                 : Color.DarkSlateGray;
+        RefreshSlaveRuntimeData(force: true);
     }
 
     private void UpdateSlaveControls()
@@ -764,18 +768,83 @@ public sealed partial class MainForm
 
         _slaveAddUnitButton.Enabled = !locked;
         _slaveDeleteUnitButton.Enabled = !locked;
-        _slaveEditInitialDataButton.Enabled = !locked;
+        bool listening = _services.SlaveSimulationManager.IsListening;
+        _slaveEditInitialDataButton.Enabled = !locked || listening;
+        _slaveEditInitialDataButton.Text = listening ? "查看当前数据" : "编辑初始数据";
         _slaveRandomConfigButton.Enabled = !locked;
         _slaveGenerateRandomInitialButton.Enabled = !locked;
         if (_slaveUnitsGroup is not null)
         {
-            string stateText = !locked
-                ? "已停止时可编辑"
-                : _services.SlaveSimulationManager.IsListening
-                    ? "从站运行中，已锁定"
-                    : "从站启动中，已锁定";
-            _slaveUnitsGroup.Text = $"模拟设备与初始数据（{stateText}）";
+            _slaveUnitsGroup.Text = listening
+                ? "模拟设备与当前数据（运行中，只读）"
+                : locked
+                    ? "模拟设备与初始数据（从站启动中，已锁定）"
+                    : "模拟设备与初始数据（已停止时可编辑）";
         }
+    }
+
+    private void RefreshSlaveRuntimeData(bool force = false)
+    {
+        if (!_services.SlaveSimulationManager.IsListening)
+        {
+            if (_slaveRuntimeViews.Count > 0)
+            {
+                _slaveRuntimeViews.Clear();
+                _slaveUnitGrid.Invalidate();
+            }
+
+            return;
+        }
+
+        long now = Environment.TickCount64;
+        if (!force && (!_slavePage.Visible || now - _lastSlaveDataRefresh < 500))
+        {
+            return;
+        }
+
+        _lastSlaveDataRefresh = now;
+        foreach (DataGridViewRow row in _slaveUnitGrid.Rows)
+        {
+            if (row.DataBoundItem is not SlaveUnitEditor editor
+                || _services.SlaveSimulationManager.GetDataSnapshot(editor.UnitId) is not { } snapshot)
+            {
+                continue;
+            }
+
+            SlaveUnitEditor view = SlaveUnitEditor.FromSnapshot(snapshot, _currentSlaveAddressBase);
+            _slaveRuntimeViews.TryGetValue(editor.UnitId, out SlaveUnitEditor? previous);
+            _slaveRuntimeViews[editor.UnitId] = view;
+            for (int column = 1; column <= 4; column++)
+            {
+                if (previous is null || GetSlaveAreaText(previous, column) != GetSlaveAreaText(view, column))
+                {
+                    _slaveUnitGrid.InvalidateCell(column, row.Index);
+                }
+            }
+        }
+    }
+
+    private string GetSlaveUnitCellText(int rowIndex, int columnIndex)
+    {
+        SlaveUnitEditor editor = (SlaveUnitEditor)_slaveUnitGrid.Rows[rowIndex].DataBoundItem!;
+        if (_services.SlaveSimulationManager.IsListening
+            && _slaveRuntimeViews.TryGetValue(editor.UnitId, out SlaveUnitEditor? runtime))
+        {
+            editor = runtime;
+        }
+
+        return GetSlaveAreaText(editor, columnIndex);
+    }
+
+    private static string GetSlaveAreaText(SlaveUnitEditor editor, int columnIndex)
+    {
+        return columnIndex switch
+        {
+            2 => editor.InputRegisters,
+            3 => editor.Coils,
+            4 => editor.DiscreteInputs,
+            _ => editor.HoldingRegisters
+        };
     }
 
     private void OnSlaveUnitGridCellParsing(
@@ -1257,13 +1326,12 @@ public sealed partial class MainForm
     {
         if (e.RowIndex < 0
             || e.ColumnIndex < 1
-            || e.ColumnIndex > 4
-            || e.Value is not string text)
+            || e.ColumnIndex > 4)
         {
             return;
         }
 
-        e.Value = SummarizeSlaveInitialData(text);
+        e.Value = SummarizeSlaveInitialData(GetSlaveUnitCellText(e.RowIndex, e.ColumnIndex));
         e.FormattingApplied = true;
     }
 
@@ -1279,17 +1347,16 @@ public sealed partial class MainForm
             return;
         }
 
-        string value = Convert.ToString(
-            _slaveUnitGrid.Rows[e.RowIndex].Cells[e.ColumnIndex].Value,
-            CultureInfo.InvariantCulture) ?? string.Empty;
+        string value = GetSlaveUnitCellText(e.RowIndex, e.ColumnIndex);
+        bool listening = _services.SlaveSimulationManager.IsListening;
         const int maxPreviewLength = 240;
         string preview = value.Length > maxPreviewLength
             ? value[..maxPreviewLength] + "...（其余数据请在明细窗口查看）"
             : value;
         e.ToolTipText = string.IsNullOrWhiteSpace(value)
-            ? "暂无预置值。双击此单元格可按地址逐行编辑。"
-            : $"初始值预览：{preview}{Environment.NewLine}{Environment.NewLine}"
-              + "双击此单元格可打开明细编辑窗口。";
+            ? listening ? "暂无已写入的数据。双击可打开只读明细。" : "暂无预置值。双击此单元格可按地址逐行编辑。"
+            : $"{(listening ? "当前值" : "初始值")}预览：{preview}{Environment.NewLine}{Environment.NewLine}"
+              + (listening ? "双击可查看实时数据明细，运行中不可编辑。" : "双击此单元格可打开明细编辑窗口。");
     }
 
     private void OnSlaveUnitGridCellDoubleClick(
@@ -1306,17 +1373,12 @@ public sealed partial class MainForm
 
     private void OpenSlaveInitialDataEditor(SlaveArea? requestedArea = null)
     {
-        if (_services.SlaveSimulationManager.IsListening || _slaveStartPending)
+        if (_slaveStartPending)
         {
-            MessageBox.Show(
-                this,
-                "从站运行期间不能修改初始数据，请先停止从站。",
-                "编辑初始数据",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
             return;
         }
 
+        bool listening = _services.SlaveSimulationManager.IsListening;
         if (_slaveUnitGrid.CurrentRow?.DataBoundItem is not SlaveUnitEditor editor)
         {
             MessageBox.Show(
@@ -1348,7 +1410,8 @@ public sealed partial class MainForm
         using SlaveInitialDataForm dialog = new(
             source,
             _currentSlaveAddressBase,
-            requestedArea ?? GetSlaveAreaFromColumn(_slaveUnitGrid.CurrentCell?.ColumnIndex ?? 1));
+            requestedArea ?? GetSlaveAreaFromColumn(_slaveUnitGrid.CurrentCell?.ColumnIndex ?? 1),
+            listening ? () => _services.SlaveSimulationManager.GetDataSnapshot(editor.UnitId) : null);
         if (dialog.ShowDialog(this) != DialogResult.OK
             || dialog.UpdatedConfiguration is not SlaveUnitConfiguration updated)
         {
@@ -1497,6 +1560,7 @@ public sealed partial class MainForm
             protocolAddress,
             next,
             function);
+        RefreshSlaveRuntimeData(force: true);
         _slaveUnitGrid.Invalidate();
         _slaveRuleGrid.Invalidate();
     }
@@ -1576,6 +1640,7 @@ public sealed partial class MainForm
                 + $"{Environment.NewLine}显示地址：{_slaveManualAddressInput.Value}"
                 + $"{Environment.NewLine}协议地址：{address}"
                 + $"{Environment.NewLine}值：{FormatSlaveValues(valuesToWrite)}");
+            RefreshSlaveRuntimeData(force: true);
         }
         catch (ArgumentOutOfRangeException exception)
             when (exception.ParamName == "inputAddress")
@@ -1863,6 +1928,21 @@ public sealed partial class MainForm
                     unit.DiscreteInputs,
                     addressBase,
                     ModbusFunction.ReadDiscreteInputs)
+            };
+        }
+
+        public static SlaveUnitEditor FromSnapshot(SlaveUnitDataSnapshot snapshot, AddressBase addressBase)
+        {
+            return new SlaveUnitEditor
+            {
+                UnitId = snapshot.UnitId,
+                HoldingRegisters = FormatRegisterMap(
+                    snapshot.HoldingRegisters, addressBase, ModbusFunction.ReadHoldingRegisters),
+                InputRegisters = FormatRegisterMap(
+                    snapshot.InputRegisters, addressBase, ModbusFunction.ReadInputRegisters),
+                Coils = FormatCoilMap(snapshot.Coils, addressBase, ModbusFunction.ReadCoils),
+                DiscreteInputs = FormatCoilMap(
+                    snapshot.DiscreteInputs, addressBase, ModbusFunction.ReadDiscreteInputs)
             };
         }
     }

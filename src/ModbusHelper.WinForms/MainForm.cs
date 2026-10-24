@@ -301,10 +301,10 @@ public sealed partial class MainForm : Form
         SetToolTip(
             _slaveUnitGrid,
             "每一行是一个独立的模拟从站；表格中的“从站地址”就是 UnitID，必须与主站请求一致。"
-            + "此表设置从站启动时的初始值；从站启动中和运行时表格会锁定，停止后才能编辑并在下次启动时加载。"
+            + "停止时设置启动初始值；运行时显示当前内存，不能编辑，但可打开只读明细。"
             + "列名中的 01/02/03/04 就是主站读取时对应的功能码。"
             + "地址使用本页的从站地址基准。多个地址仅显示数量，悬停可查看部分预览，"
-            + "双击或点击“编辑初始数据”后按地址逐行查看和编辑；“（空）”表示该区域没有预置值。");
+            + "双击或点击明细按钮可按地址逐行查看；运行中的改值不会保存为初始配置。");
         SetToolTip(
             _slaveRuleGrid,
             "规则只有在“启用”勾选且点击“应用规则”后才参与匹配。"
@@ -441,6 +441,7 @@ public sealed partial class MainForm : Form
 
         RefreshCommunicationHistory();
         RefreshSlaveFrames();
+        RefreshSlaveRuntimeData();
         RefreshTrendChart();
         RefreshLogGrid();
         RefreshStatistics();

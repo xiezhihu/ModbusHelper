@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Reflection;
 
 using ModbusHelper.Business.Logging;
+using ModbusHelper.Business.Slaves;
 using ModbusHelper.Core.Configuration;
 using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Models;
@@ -14,6 +15,8 @@ namespace ModbusHelper.UiSmoke;
 
 internal static class Program
 {
+    private static readonly bool[] OnValues = { true };
+
     [STAThread]
     private static void Main(string[] args)
     {
@@ -151,10 +154,11 @@ internal static class Program
         if (!unitGrid.ReadOnly
             || GetField<Button>(form, "_slaveAddUnitButton").Enabled
             || GetField<Button>(form, "_slaveDeleteUnitButton").Enabled
-            || GetField<Button>(form, "_slaveEditInitialDataButton").Enabled
-            || !slaveUnitsGroup.Text.Contains("已锁定", StringComparison.Ordinal))
+            || !GetField<Button>(form, "_slaveEditInitialDataButton").Enabled
+            || GetField<Button>(form, "_slaveEditInitialDataButton").Text != "查看当前数据"
+            || !slaveUnitsGroup.Text.Contains("当前数据（运行中，只读）", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("从站运行后，初始数据表及新增、删除、编辑操作必须锁定并显示原因。");
+            throw new InvalidOperationException("从站运行后应锁定编辑和增删操作，并允许查看当前数据。");
         }
 
         string[] expectedSlaveHeaders =
@@ -1427,6 +1431,8 @@ internal static class Program
             throw new InvalidOperationException("运行中写入未即时生效或没有【时间】格式的历史。");
         }
 
+        CheckSlaveRuntimeDataView(form, unitGrid);
+
         GetField<Button>(form, "_slaveStopButton").PerformClick();
         PumpUntil(() => slaveStart.Enabled, TimeSpan.FromSeconds(5));
         if (unitGrid.ReadOnly
@@ -1436,6 +1442,11 @@ internal static class Program
             || !slaveUnitsGroup.Text.Contains("已停止时可编辑", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("从站停止后初始数据表及新增、删除、编辑操作应恢复可用并显示状态。");
+        }
+        if (Convert.ToString(unitGrid.Rows[0].Cells[1].FormattedValue, CultureInfo.InvariantCulture) != "共 2 项"
+            || (string)unitGrid.Rows[0].Cells[1].Value != "40001 = 0, 40008 = 123")
+        {
+            throw new InvalidOperationException("停止后上表没有恢复初始值显示。");
         }
 
         unitGrid.Rows[0].Cells[1].Value = "40001 = 100";
@@ -1505,6 +1516,97 @@ internal static class Program
 
         GetField<TextBox>(form, "_slaveManualValuesInput").Text = "42";
         write.PerformClick();
+    }
+
+    private static void CheckSlaveRuntimeDataView(Form owner, DataGridView units)
+    {
+        string initial = (string)units.Rows[0].Cells[1].Value;
+        if (Convert.ToString(units.Rows[0].Cells[1].FormattedValue, CultureInfo.InvariantCulture) != "共 2 项")
+        {
+            throw new InvalidOperationException("手动改值后，上表没有保留两个已有地址的摘要。");
+        }
+
+        object services = GetField<object>(owner, "_services");
+        SlaveSimulationManager manager = (SlaveSimulationManager)services.GetType()
+            .GetProperty("SlaveSimulationManager")!.GetValue(services)!;
+        byte unitId = Convert.ToByte(units.Rows[0].Cells[0].Value, CultureInfo.InvariantCulture);
+        NumericUpDown address = GetField<NumericUpDown>(owner, "_slaveManualAddressInput");
+        TextBox values = GetField<TextBox>(owner, "_slaveManualValuesInput");
+        address.Value = 40002;
+        values.Text = "20";
+        FindButton(owner, "写入模拟数据")!.PerformClick();
+        if (Convert.ToString(units.Rows[0].Cells[1].FormattedValue, CultureInfo.InvariantCulture) != "共 3 项"
+            || (string)units.Rows[0].Cells[1].Value != initial)
+        {
+            throw new InvalidOperationException("新地址写入未同步摘要，或运行值污染了初始配置。");
+        }
+
+        units.CurrentCell = units.Rows[0].Cells[1];
+        WithSlaveInitialDataDialog(
+            () => GetField<Button>(owner, "_slaveEditInitialDataButton").PerformClick(),
+            dialog =>
+            {
+                foreach (SlaveArea area in Enum.GetValues<SlaveArea>())
+                {
+                    if (!GetInitialDataGrid(dialog, area).ReadOnly)
+                    {
+                        throw new InvalidOperationException("运行数据明细的四个存储区必须全部只读。");
+                    }
+                }
+
+                if (GetField<Button>(dialog, "_applyButton").Enabled
+                    || FindButton(dialog, "新增行") is not null
+                    || FindButton(dialog, "删除行") is not null
+                    || FindButton(dialog, "清空区域") is not null)
+                {
+                    throw new InvalidOperationException("运行数据明细不能保留可编辑的入口。");
+                }
+
+                DataGridView grid = GetInitialDataGrid(dialog, SlaveArea.HoldingRegisters);
+                if (grid.Rows.Count != 3
+                    || (string)grid.Rows[0].Cells[1].Value != "125"
+                    || (string)grid.Rows[1].Cells[1].Value != "20"
+                    || (string)grid.Rows[2].Cells[1].Value != "123")
+                {
+                    throw new InvalidOperationException("运行明细没有显示新写入的地址和值。");
+                }
+
+                grid.CurrentCell = grid.Rows[1].Cells[1];
+                manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0,
+                    Enumerable.Range(0, 1000).Select(index => (ushort)(index + 10)).ToArray());
+                Pump(TimeSpan.FromMilliseconds(700));
+                grid.FirstDisplayedScrollingRowIndex = 300;
+                int firstRow = grid.FirstDisplayedScrollingRowIndex;
+                manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0, new ushort[] { 333 });
+                manager.WriteValues(unitId, SlaveArea.DiscreteInputs, 3, OnValues);
+                Pump(TimeSpan.FromMilliseconds(700));
+                if (grid.Rows.Count != 1000 || (string)grid.Rows[0].Cells[1].Value != "333"
+                    || grid.FirstDisplayedScrollingRowIndex != firstRow
+                    || grid.CurrentCell?.RowIndex != 1)
+                {
+                    throw new InvalidOperationException("打开的明细未动态更新，或刷新改变了查看位置。");
+                }
+
+                TabControl tabs = GetField<TabControl>(dialog, "_areaTabs");
+                tabs.SelectedIndex = 3;
+                DataGridView discretes = GetInitialDataGrid(dialog, SlaveArea.DiscreteInputs);
+                if (discretes.Rows.Count != 2
+                    || Convert.ToInt32(discretes.Rows[1].Cells[0].Value, CultureInfo.InvariantCulture) != 10004
+                    || (string)discretes.Rows[1].Cells[1].Value != "ON")
+                {
+                    throw new InvalidOperationException("四区只读视图没有同步新增的离散输入数据。");
+                }
+
+                SavePage(dialog, Path.Combine(AppContext.BaseDirectory, "ui-smoke"), "16-运行数据只读明细.png");
+                dialog.DialogResult = DialogResult.Cancel;
+            });
+        address.Value = 40001;
+        if ((string)units.Rows[0].Cells[1].Value != initial)
+        {
+            throw new InvalidOperationException("查看运行数据后修改了原初始配置。");
+        }
+
+        Console.WriteLine("已验证：运行中查看四区数据、手动新增地址同步、明细实时更新与滚动位置保持。");
     }
 
     private static void AssertSlaveGridViewport(DataGridView grid)

@@ -9,7 +9,6 @@ using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Models;
 
 using NModbus;
-using NModbus.Data;
 using NModbus.Serial;
 
 namespace ModbusHelper.Communication.Slaves;
@@ -23,7 +22,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
     private readonly ExceptionRuleProvider _ruleProvider = new();
     private readonly FrameCaptureLogger _frameLogger;
     private readonly object _syncRoot = new();
-    private readonly Dictionary<byte, SlaveDataStore> _dataStores = new();
+    private readonly Dictionary<byte, SnapshotSlaveDataStore> _dataStores = new();
     private ModbusFactory? _factory;
     private IModbusSlaveNetwork? _network;
     private SerialPort? _serialPort;
@@ -125,7 +124,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
 
             foreach (SlaveUnitConfiguration unit in configuration.Units)
             {
-                SlaveDataStore store = CreateDataStore(unit);
+                SnapshotSlaveDataStore store = CreateDataStore(unit);
                 _dataStores[unit.UnitId] = store;
                 IModbusSlave slave = _factory.CreateSlave(unit.UnitId, store);
                 _network!.AddSlave(slave);
@@ -232,9 +231,12 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
         }
 
         cancellation?.Dispose();
-        _factory = null;
-        _dataStores.Clear();
-        SetState(SlaveSimulatorState.Stopped, "从站模拟器已停止");
+        lock (_syncRoot)
+        {
+            _factory = null;
+            _dataStores.Clear();
+            SetState(SlaveSimulatorState.Stopped, "从站模拟器已停止");
+        }
     }
 
     /// <summary>
@@ -259,7 +261,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(values);
         lock (_syncRoot)
         {
-            if (!_dataStores.TryGetValue(unitId, out SlaveDataStore? store))
+            if (!_dataStores.TryGetValue(unitId, out SnapshotSlaveDataStore? store))
             {
                 throw new ArgumentException($"从站 {unitId} 不存在。", nameof(unitId));
             }
@@ -296,7 +298,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
     {
         lock (_syncRoot)
         {
-            if (!_dataStores.TryGetValue(unitId, out SlaveDataStore? store))
+            if (!_dataStores.TryGetValue(unitId, out SnapshotSlaveDataStore? store))
             {
                 throw new ArgumentException($"从站 {unitId} 不存在。", nameof(unitId));
             }
@@ -309,6 +311,17 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
                 SlaveArea.DiscreteInputs => store.CoilInputs.ReadPoints(startAddress, count),
                 _ => throw new ArgumentOutOfRangeException(nameof(area))
             };
+        }
+    }
+
+    /// <summary>读取指定从站已初始化或写入过的地址和值；未运行时返回空。</summary>
+    public SlaveUnitDataSnapshot? GetDataSnapshot(byte unitId)
+    {
+        lock (_syncRoot)
+        {
+            return IsListening && _dataStores.TryGetValue(unitId, out SnapshotSlaveDataStore? store)
+                ? store.GetSnapshot(unitId)
+                : null;
         }
     }
 
@@ -347,9 +360,9 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
         _network = _factory!.CreateRtuSlaveNetwork(serialPort);
     }
 
-    private static SlaveDataStore CreateDataStore(SlaveUnitConfiguration unit)
+    private SnapshotSlaveDataStore CreateDataStore(SlaveUnitConfiguration unit)
     {
-        SlaveDataStore store = new();
+        SnapshotSlaveDataStore store = new(_syncRoot);
         foreach (RegisterInitialValue value in unit.HoldingRegisters)
         {
             store.HoldingRegisters.WritePoints(value.Address, new[] { value.Value });
@@ -377,7 +390,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
     {
         lock (_syncRoot)
         {
-            if (!_dataStores.TryGetValue(rule.UnitId, out SlaveDataStore? store))
+            if (!_dataStores.TryGetValue(rule.UnitId, out SnapshotSlaveDataStore? store))
             {
                 return;
             }
