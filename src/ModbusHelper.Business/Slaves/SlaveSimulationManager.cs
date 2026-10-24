@@ -70,6 +70,7 @@ public sealed class SlaveSimulationManager : IAsyncDisposable
         _simulator.DiagnosticMessage += OnDiagnosticMessage;
         _simulator.StateChanged += OnStateChanged;
         _simulator.ErrorOccurred += OnErrorOccurred;
+        _simulator.DataChanged += OnDataChanged;
     }
 
     /// <summary>状态变化。</summary>
@@ -77,6 +78,9 @@ public sealed class SlaveSimulationManager : IAsyncDisposable
 
     /// <summary>从站错误。</summary>
     public event EventHandler<SlaveErrorEventArgs>? ErrorOccurred;
+
+    /// <summary>运行数据变化；通知来自写入线程，界面应异步切换到 UI 线程处理。</summary>
+    public event EventHandler<SlaveDataChangedEventArgs>? DataChanged;
 
     /// <summary>当前状态。</summary>
     public SlaveSimulatorState State => _simulator.State;
@@ -158,6 +162,11 @@ public sealed class SlaveSimulationManager : IAsyncDisposable
     private void OnFrameCaptured(RawFrameRecord frame)
     {
         _logService.AddFrame(frame);
+    }
+
+    private void OnDataChanged(object? sender, SlaveDataChangedEventArgs args)
+    {
+        DataChanged?.Invoke(this, args);
     }
 
     private void OnDiagnosticMessage(TransportLogMessage message)

@@ -47,7 +47,6 @@ public sealed partial class MainForm
     private readonly DataGridView _slaveRuleGrid = new();
     private readonly BindingList<SlaveUnitEditor> _slaveUnitEditors = new();
     private readonly Dictionary<byte, SlaveUnitEditor> _slaveRuntimeViews = new();
-    private long _lastSlaveDataRefresh;
     private readonly BindingList<ExceptionRuleEditor> _slaveRuleEditors = new();
     private List<SlaveRandomDataRule> _slaveRandomRules = new();
     private readonly LinkedList<string> _slaveManualHistory = new();
@@ -733,7 +732,7 @@ public sealed partial class MainForm
             : message.Contains("错误", StringComparison.Ordinal)
                 ? Color.DarkRed
                 : Color.DarkSlateGray;
-        RefreshSlaveRuntimeData(force: true);
+        RefreshSlaveRuntimeData();
     }
 
     private void UpdateSlaveControls()
@@ -783,7 +782,7 @@ public sealed partial class MainForm
         }
     }
 
-    private void RefreshSlaveRuntimeData(bool force = false)
+    private void RefreshSlaveRuntimeData(byte? changedUnitId = null)
     {
         if (!_services.SlaveSimulationManager.IsListening)
         {
@@ -796,16 +795,10 @@ public sealed partial class MainForm
             return;
         }
 
-        long now = Environment.TickCount64;
-        if (!force && (!_slavePage.Visible || now - _lastSlaveDataRefresh < 500))
-        {
-            return;
-        }
-
-        _lastSlaveDataRefresh = now;
         foreach (DataGridViewRow row in _slaveUnitGrid.Rows)
         {
             if (row.DataBoundItem is not SlaveUnitEditor editor
+                || (changedUnitId.HasValue && editor.UnitId != changedUnitId.Value)
                 || _services.SlaveSimulationManager.GetDataSnapshot(editor.UnitId) is not { } snapshot)
             {
                 continue;
@@ -1411,7 +1404,7 @@ public sealed partial class MainForm
             source,
             _currentSlaveAddressBase,
             requestedArea ?? GetSlaveAreaFromColumn(_slaveUnitGrid.CurrentCell?.ColumnIndex ?? 1),
-            listening ? () => _services.SlaveSimulationManager.GetDataSnapshot(editor.UnitId) : null);
+            listening ? _services.SlaveSimulationManager : null);
         if (dialog.ShowDialog(this) != DialogResult.OK
             || dialog.UpdatedConfiguration is not SlaveUnitConfiguration updated)
         {
@@ -1560,7 +1553,7 @@ public sealed partial class MainForm
             protocolAddress,
             next,
             function);
-        RefreshSlaveRuntimeData(force: true);
+        RefreshSlaveRuntimeData();
         _slaveUnitGrid.Invalidate();
         _slaveRuleGrid.Invalidate();
     }
@@ -1640,7 +1633,6 @@ public sealed partial class MainForm
                 + $"{Environment.NewLine}显示地址：{_slaveManualAddressInput.Value}"
                 + $"{Environment.NewLine}协议地址：{address}"
                 + $"{Environment.NewLine}值：{FormatSlaveValues(valuesToWrite)}");
-            RefreshSlaveRuntimeData(force: true);
         }
         catch (ArgumentOutOfRangeException exception)
             when (exception.ParamName == "inputAddress")

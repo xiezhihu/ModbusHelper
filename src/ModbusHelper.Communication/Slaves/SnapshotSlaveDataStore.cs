@@ -1,4 +1,5 @@
 using ModbusHelper.Core.Configuration;
+using ModbusHelper.Core.Enums;
 using ModbusHelper.Core.Models;
 
 using NModbus;
@@ -15,15 +16,24 @@ internal sealed class SnapshotSlaveDataStore : ISlaveDataStore
     private readonly SnapshotPointSource<bool> _coils;
     private readonly SnapshotPointSource<bool> _discreteInputs;
 
-    public SnapshotSlaveDataStore(object syncRoot)
+    public SnapshotSlaveDataStore(object syncRoot, byte unitId)
     {
         _syncRoot = syncRoot;
         SlaveDataStore inner = new();
-        _holdingRegisters = new(inner.HoldingRegisters, syncRoot);
-        _inputRegisters = new(inner.InputRegisters, syncRoot);
-        _coils = new(inner.CoilDiscretes, syncRoot);
-        _discreteInputs = new(inner.CoilInputs, syncRoot);
+        _holdingRegisters = new(inner.HoldingRegisters, syncRoot,
+            (address, count) => Notify(SlaveArea.HoldingRegisters, address, count));
+        _inputRegisters = new(inner.InputRegisters, syncRoot,
+            (address, count) => Notify(SlaveArea.InputRegisters, address, count));
+        _coils = new(inner.CoilDiscretes, syncRoot,
+            (address, count) => Notify(SlaveArea.Coils, address, count));
+        _discreteInputs = new(inner.CoilInputs, syncRoot,
+            (address, count) => Notify(SlaveArea.DiscreteInputs, address, count));
+
+        void Notify(SlaveArea area, ushort address, int count) =>
+            DataChanged?.Invoke(this, new SlaveDataChangedEventArgs(unitId, area, address, count));
     }
+
+    public event EventHandler<SlaveDataChangedEventArgs>? DataChanged;
 
     public IPointSource<ushort> HoldingRegisters => _holdingRegisters;
     public IPointSource<ushort> InputRegisters => _inputRegisters;
@@ -49,7 +59,10 @@ internal sealed class SnapshotSlaveDataStore : ISlaveDataStore
         }
     }
 
-    private sealed class SnapshotPointSource<T>(IPointSource<T> inner, object syncRoot) : IPointSource<T>
+    private sealed class SnapshotPointSource<T>(
+        IPointSource<T> inner,
+        object syncRoot,
+        Action<ushort, int> notifyChanged) : IPointSource<T>
     {
         public SortedDictionary<ushort, T> Values { get; } = new();
 
@@ -69,13 +82,23 @@ internal sealed class SnapshotSlaveDataStore : ISlaveDataStore
                 throw new ArgumentOutOfRangeException(nameof(points), "写入范围超出 0 至 65535 的协议地址空间。");
             }
 
+            bool changed = false;
             lock (syncRoot)
             {
                 inner.WritePoints(startAddress, points);
                 for (int index = 0; index < points.Length; index++)
                 {
-                    Values[(ushort)(startAddress + index)] = points[index];
+                    ushort address = (ushort)(startAddress + index);
+                    changed |= !Values.TryGetValue(address, out T? previous)
+                        || !EqualityComparer<T>.Default.Equals(previous, points[index]);
+                    Values[address] = points[index];
                 }
+            }
+
+            // 每批写入只通知一次；新地址即使写入默认值，也属于可见数据的变化。
+            if (changed)
+            {
+                notifyChanged(startAddress, points.Length);
             }
         }
     }

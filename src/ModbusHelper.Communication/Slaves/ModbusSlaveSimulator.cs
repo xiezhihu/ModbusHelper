@@ -60,6 +60,9 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
     /// <summary>监听错误。</summary>
     public event EventHandler<SlaveSimulatorErrorEventArgs>? ErrorOccurred;
 
+    /// <summary>运行数据变化；在写入线程触发，订阅方应异步处理，不得阻塞通信线程。</summary>
+    public event EventHandler<SlaveDataChangedEventArgs>? DataChanged;
+
     /// <summary>当前状态。</summary>
     public SlaveSimulatorState State => _state;
 
@@ -362,7 +365,7 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
 
     private SnapshotSlaveDataStore CreateDataStore(SlaveUnitConfiguration unit)
     {
-        SnapshotSlaveDataStore store = new(_syncRoot);
+        SnapshotSlaveDataStore store = new(_syncRoot, unit.UnitId);
         foreach (RegisterInitialValue value in unit.HoldingRegisters)
         {
             store.HoldingRegisters.WritePoints(value.Address, new[] { value.Value });
@@ -383,7 +386,24 @@ public sealed class ModbusSlaveSimulator : IAsyncDisposable
             store.CoilInputs.WritePoints(value.Address, new[] { value.Value });
         }
 
+        store.DataChanged += OnDataChanged;
         return store;
+    }
+
+    private void OnDataChanged(object? sender, SlaveDataChangedEventArgs args)
+    {
+        lock (_syncRoot)
+        {
+            // 启动值由监听状态事件统一加载；停止或重启后的旧存储不能再通知界面。
+            if (!IsListening || _runCancellation?.IsCancellationRequested != false
+                || !_dataStores.TryGetValue(args.UnitId, out SnapshotSlaveDataStore? current)
+                || !ReferenceEquals(sender, current))
+            {
+                return;
+            }
+        }
+
+        DataChanged?.Invoke(this, args);
     }
 
     private void ApplyRandomRule(SlaveRandomDataRule rule)

@@ -44,6 +44,7 @@ await RunAsync("通信统计", TestStatistics);
 await RunAsync("TCP 主从自环", TestTcpSelfLoop);
 await RunAsync("从站随机数据", TestSlaveRandomData);
 await RunAsync("从站运行数据快照", TestSlaveDataSnapshot);
+await RunAsync("从站数据变化事件", TestSlaveDataChanged);
 await RunAsync("两层超时", TestTimeoutLayers);
 int rtuArgumentIndex = Array.FindIndex(
     args,
@@ -853,6 +854,128 @@ static async Task TestSlaveDataSnapshot()
     SlaveUnitDataSnapshot restarted = manager.GetDataSnapshot(1)!;
     Equal(1, restarted.HoldingRegisters.Count);
     Equal((ushort)10, restarted.HoldingRegisters[0].Value);
+    await manager.StopAsync();
+}
+
+static async Task TestSlaveDataChanged()
+{
+    SlaveSimulationConfiguration configuration = new()
+    {
+        Type = ConnectionType.Tcp,
+        Tcp = new TcpSlaveConfiguration { ListenAddress = "127.0.0.1", Port = GetFreeTcpPort() },
+        Units =
+        {
+            new SlaveUnitConfiguration
+            {
+                UnitId = 1,
+                HoldingRegisters = { new() { Address = 0, Value = 10 } }
+            },
+            new SlaveUnitConfiguration { UnitId = 2 }
+        }
+    };
+    await using SlaveSimulationManager manager = new(new ModbusLogService());
+    ConcurrentQueue<SlaveDataChangedEventArgs> changes = new();
+    EventHandler<SlaveDataChangedEventArgs> handler = (_, change) =>
+    {
+        // 写入成功后才通知，订阅方可立即读取一致的数据副本。
+        True(manager.GetDataSnapshot(change.UnitId) is not null);
+        changes.Enqueue(change);
+    };
+    manager.DataChanged += handler;
+    await manager.StartAsync(configuration);
+    Equal(0, changes.Count);
+    manager.WriteValues(1, SlaveArea.HoldingRegisters, 0, new ushort[] { 10 });
+    Equal(0, changes.Count);
+    manager.WriteValues(1, SlaveArea.HoldingRegisters, 0, new ushort[] { 20, 21 });
+    Equal(1, changes.Count);
+    True(changes.TryDequeue(out SlaveDataChangedEventArgs? manual));
+    Equal((byte)1, manual!.UnitId);
+    Equal(SlaveArea.HoldingRegisters, manual.Area);
+    Equal((ushort)0, manual.StartAddress);
+    Equal(2, manual.Count);
+
+    ushort[] zeroRegisters = { 0 };
+    bool[] offValues = { false };
+    bool[] onValues = { true };
+    manager.WriteValues(1, SlaveArea.InputRegisters, 3, zeroRegisters);
+    manager.WriteValues(1, SlaveArea.Coils, 3, offValues);
+    manager.WriteValues(2, SlaveArea.DiscreteInputs, ushort.MaxValue, onValues);
+    Equal(3, changes.Count);
+    True(changes.Select(change => change.Area).SequenceEqual(new[]
+    {
+        SlaveArea.InputRegisters, SlaveArea.Coils, SlaveArea.DiscreteInputs
+    }));
+    Equal((byte)2, changes.Last().UnitId);
+    Equal(ushort.MaxValue, changes.Last().StartAddress);
+    changes.Clear();
+    try
+    {
+        manager.WriteValues(1, SlaveArea.HoldingRegisters, ushort.MaxValue, new ushort[] { 1, 2 });
+        throw new InvalidOperationException("越界写入应失败。");
+    }
+    catch (ArgumentOutOfRangeException)
+    {
+        Equal(0, changes.Count);
+    }
+
+    await Task.Run(() => manager.WriteValues(1, SlaveArea.HoldingRegisters, 10,
+        Enumerable.Range(0, 1000).Select(value => (ushort)value).ToArray()));
+    Equal(1, changes.Count);
+    Equal(1000, changes.Single().Count);
+    changes.Clear();
+
+    await using ConnectionManager master = new(new ModbusLogService());
+    await master.ConnectAsync(new ConnectionConfiguration
+    {
+        Type = ConnectionType.Tcp,
+        Tcp = new TcpConnectionConfiguration { Host = "127.0.0.1", Port = configuration.Tcp.Port },
+        RetryCount = 0
+    });
+    ushort writeAddress = 20;
+    ushort[] writtenRegisters = { 123 };
+    foreach (ModbusFunction function in new[]
+             {
+                 ModbusFunction.WriteSingleCoil, ModbusFunction.WriteSingleRegister,
+                 ModbusFunction.WriteMultipleCoils, ModbusFunction.WriteMultipleRegisters
+             })
+    {
+        await master.WriteAsync(function, 1, writeAddress++, onValues, writtenRegisters);
+    }
+    Equal(4, changes.Count);
+    True(changes.All(change => change.UnitId == 1 && change.Count == 1));
+    True(changes.Select(change => (int)change.StartAddress).SequenceEqual(Enumerable.Range(20, 4)));
+    await master.DisconnectAsync();
+    await manager.StopAsync();
+    changes.Clear();
+    await manager.StartAsync(configuration);
+    Equal(0, changes.Count);
+    manager.WriteValues(1, SlaveArea.HoldingRegisters, 0, new ushort[] { 30 });
+    Equal(1, changes.Count);
+    manager.DataChanged -= handler;
+    changes.Clear();
+    manager.WriteValues(1, SlaveArea.HoldingRegisters, 0, new ushort[] { 40 });
+    Equal(0, changes.Count);
+    await manager.StopAsync();
+
+    configuration.RandomDataRules.Add(new SlaveRandomDataRule
+    {
+        UnitId = 1,
+        Area = SlaveArea.InputRegisters,
+        StartAddress = 30,
+        Count = 1,
+        MinimumValue = 456,
+        MaximumValue = 456,
+        IntervalMilliseconds = 100,
+        RandomizeWhileRunning = true
+    });
+    TaskCompletionSource<SlaveDataChangedEventArgs> randomChanged =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    manager.DataChanged += (_, change) => randomChanged.TrySetResult(change);
+    await manager.StartAsync(configuration);
+    SlaveDataChangedEventArgs random = await randomChanged.Task.WaitAsync(TimeSpan.FromSeconds(3));
+    Equal(SlaveArea.InputRegisters, random.Area);
+    Equal((ushort)30, random.StartAddress);
+    Equal((ushort)456, manager.GetDataSnapshot(1)!.InputRegisters.Single().Value);
     await manager.StopAsync();
 }
 

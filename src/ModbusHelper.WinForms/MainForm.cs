@@ -22,6 +22,7 @@ public sealed partial class MainForm : Form
     private readonly TabPage _logPage = new("报文日志");
     private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 200 };
     private readonly ConcurrentQueue<Action> _uiActions = new();
+    private readonly UiUpdateQueue<byte> _slaveDataUpdates;
     private readonly ToolTip _toolTip = new()
     {
         AutoPopDelay = 10000,
@@ -60,6 +61,7 @@ public sealed partial class MainForm : Form
     internal MainForm(AppServices services)
     {
         _services = services;
+        _slaveDataUpdates = new(this, unitId => RefreshSlaveRuntimeData(unitId));
         _configuration = services.Configuration;
         AutoScaleMode = AutoScaleMode.Dpi;
         StartPosition = FormStartPosition.CenterScreen;
@@ -85,6 +87,12 @@ public sealed partial class MainForm : Form
         FormClosing += OnMainFormClosing;
         FormClosed += OnMainFormFormClosed;
         FormClosed += (_, _) => _toolTip.Dispose();
+        FormClosed += (_, _) =>
+        {
+            _services.SlaveSimulationManager.DataChanged -= OnSlaveDataChanged;
+            _slaveDataUpdates.Dispose();
+            _uiTimer.Dispose();
+        };
         _toolTipsEnabledCheck.CheckedChanged += (_, _) =>
         {
             _toolTip.Active = _toolTipsEnabledCheck.Checked;
@@ -425,6 +433,15 @@ public sealed partial class MainForm : Form
             QueueUiAction(() => UpdateSlaveState(args.IsListening, args.Message));
         _services.SlaveSimulationManager.ErrorOccurred += (_, args) =>
             QueueUiAction(() => ShowSlaveError(args.Message));
+        _services.SlaveSimulationManager.DataChanged += OnSlaveDataChanged;
+    }
+
+    private void OnSlaveDataChanged(object? sender, Core.Models.SlaveDataChangedEventArgs args)
+    {
+        if (!_closing)
+        {
+            _slaveDataUpdates.Enqueue(args.UnitId);
+        }
     }
 
     private void QueueUiAction(Action action)
@@ -441,7 +458,6 @@ public sealed partial class MainForm : Form
 
         RefreshCommunicationHistory();
         RefreshSlaveFrames();
-        RefreshSlaveRuntimeData();
         RefreshTrendChart();
         RefreshLogGrid();
         RefreshStatistics();

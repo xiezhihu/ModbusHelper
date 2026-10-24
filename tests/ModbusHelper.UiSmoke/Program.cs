@@ -1520,6 +1520,9 @@ internal static class Program
 
     private static void CheckSlaveRuntimeDataView(Form owner, DataGridView units)
     {
+        // 停掉主窗口刷新定时器，证明数据同步只由写入事件驱动。
+        using UiTimerPause pause = new(GetField<System.Windows.Forms.Timer>(owner, "_uiTimer"));
+        Application.DoEvents();
         string initial = (string)units.Rows[0].Cells[1].Value;
         if (Convert.ToString(units.Rows[0].Cells[1].FormattedValue, CultureInfo.InvariantCulture) != "共 2 项")
         {
@@ -1535,6 +1538,7 @@ internal static class Program
         address.Value = 40002;
         values.Text = "20";
         FindButton(owner, "写入模拟数据")!.PerformClick();
+        Application.DoEvents();
         if (Convert.ToString(units.Rows[0].Cells[1].FormattedValue, CultureInfo.InvariantCulture) != "共 3 项"
             || (string)units.Rows[0].Cells[1].Value != initial)
         {
@@ -1546,6 +1550,12 @@ internal static class Program
             () => GetField<Button>(owner, "_slaveEditInitialDataButton").PerformClick(),
             dialog =>
             {
+                if (dialog.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+                    .Any(field => field.FieldType == typeof(System.Windows.Forms.Timer)))
+                {
+                    throw new InvalidOperationException("运行明细仍在使用刷新定时器。");
+                }
+
                 foreach (SlaveArea area in Enum.GetValues<SlaveArea>())
                 {
                     if (!GetInitialDataGrid(dialog, area).ReadOnly)
@@ -1574,12 +1584,19 @@ internal static class Program
                 grid.CurrentCell = grid.Rows[1].Cells[1];
                 manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0,
                     Enumerable.Range(0, 1000).Select(index => (ushort)(index + 10)).ToArray());
-                Pump(TimeSpan.FromMilliseconds(700));
+                Application.DoEvents();
                 grid.FirstDisplayedScrollingRowIndex = 300;
                 int firstRow = grid.FirstDisplayedScrollingRowIndex;
-                manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0, new ushort[] { 333 });
-                manager.WriteValues(unitId, SlaveArea.DiscreteInputs, 3, OnValues);
-                Pump(TimeSpan.FromMilliseconds(700));
+                Task.Run(() =>
+                {
+                    for (int value = 300; value <= 333; value++)
+                    {
+                        manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0, new ushort[] { (ushort)value });
+                    }
+
+                    manager.WriteValues(unitId, SlaveArea.DiscreteInputs, 3, OnValues);
+                }).GetAwaiter().GetResult();
+                Application.DoEvents();
                 if (grid.Rows.Count != 1000 || (string)grid.Rows[0].Cells[1].Value != "333"
                     || grid.FirstDisplayedScrollingRowIndex != firstRow
                     || grid.CurrentCell?.RowIndex != 1)
@@ -1606,7 +1623,28 @@ internal static class Program
             throw new InvalidOperationException("查看运行数据后修改了原初始配置。");
         }
 
-        Console.WriteLine("已验证：运行中查看四区数据、手动新增地址同步、明细实时更新与滚动位置保持。");
+        Console.WriteLine("已验证：停止 UI 定时器后，四区数据、新地址及后台连续写入仍即时同步；滚动与选中位置保持。");
+    }
+
+    private sealed class UiTimerPause : IDisposable
+    {
+        private readonly System.Windows.Forms.Timer _timer;
+        private readonly bool _enabled;
+
+        public UiTimerPause(System.Windows.Forms.Timer timer)
+        {
+            _timer = timer;
+            _enabled = timer.Enabled;
+            timer.Stop();
+        }
+
+        public void Dispose()
+        {
+            if (_enabled)
+            {
+                _timer.Start();
+            }
+        }
     }
 
     private static void AssertSlaveGridViewport(DataGridView grid)
