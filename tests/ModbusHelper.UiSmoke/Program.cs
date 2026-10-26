@@ -1546,84 +1546,102 @@ internal static class Program
         }
 
         units.CurrentCell = units.Rows[0].Cells[1];
-        WithSlaveInitialDataDialog(
-            () => GetField<Button>(owner, "_slaveEditInitialDataButton").PerformClick(),
-            dialog =>
-            {
-                if (dialog.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
-                    .Any(field => field.FieldType == typeof(System.Windows.Forms.Timer)))
+        CheckBox topMostCheck = GetField<CheckBox>(owner, "_topMostCheck");
+        bool topMostBefore = topMostCheck.Checked;
+        topMostCheck.Checked = true;
+        try
+        {
+            WithSlaveInitialDataDialog(
+                () => GetField<Button>(owner, "_slaveEditInitialDataButton").PerformClick(),
+                dialog =>
                 {
-                    throw new InvalidOperationException("运行明细仍在使用刷新定时器。");
-                }
-
-                foreach (SlaveArea area in Enum.GetValues<SlaveArea>())
-                {
-                    if (!GetInitialDataGrid(dialog, area).ReadOnly)
+                    if (!dialog.TopMost)
                     {
-                        throw new InvalidOperationException("运行数据明细的四个存储区必须全部只读。");
-                    }
-                }
-
-                if (GetField<Button>(dialog, "_applyButton").Enabled
-                    || FindButton(dialog, "新增行") is not null
-                    || FindButton(dialog, "删除行") is not null
-                    || FindButton(dialog, "清空区域") is not null)
-                {
-                    throw new InvalidOperationException("运行数据明细不能保留可编辑的入口。");
-                }
-
-                DataGridView grid = GetInitialDataGrid(dialog, SlaveArea.HoldingRegisters);
-                if (grid.Rows.Count != 3
-                    || (string)grid.Rows[0].Cells[1].Value != "125"
-                    || (string)grid.Rows[1].Cells[1].Value != "20"
-                    || (string)grid.Rows[2].Cells[1].Value != "123")
-                {
-                    throw new InvalidOperationException("运行明细没有显示新写入的地址和值。");
-                }
-
-                grid.CurrentCell = grid.Rows[1].Cells[1];
-                manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0,
-                    Enumerable.Range(0, 1000).Select(index => (ushort)(index + 10)).ToArray());
-                Application.DoEvents();
-                grid.FirstDisplayedScrollingRowIndex = 300;
-                int firstRow = grid.FirstDisplayedScrollingRowIndex;
-                Task.Run(() =>
-                {
-                    for (int value = 300; value <= 333; value++)
-                    {
-                        manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0, new ushort[] { (ushort)value });
+                        throw new InvalidOperationException(
+                            "主窗体置顶时，查看当前数据窗口也必须置顶，避免被父窗口遮挡。");
                     }
 
-                    manager.WriteValues(unitId, SlaveArea.DiscreteInputs, 3, OnValues);
-                }).GetAwaiter().GetResult();
-                Application.DoEvents();
-                if (grid.Rows.Count != 1000 || (string)grid.Rows[0].Cells[1].Value != "333"
-                    || grid.FirstDisplayedScrollingRowIndex != firstRow
-                    || grid.CurrentCell?.RowIndex != 1)
-                {
-                    throw new InvalidOperationException("打开的明细未动态更新，或刷新改变了查看位置。");
-                }
+                    if (dialog.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+                        .Any(field => field.FieldType == typeof(System.Windows.Forms.Timer)))
+                    {
+                        throw new InvalidOperationException("运行明细仍在使用刷新定时器。");
+                    }
 
-                TabControl tabs = GetField<TabControl>(dialog, "_areaTabs");
-                tabs.SelectedIndex = 3;
-                DataGridView discretes = GetInitialDataGrid(dialog, SlaveArea.DiscreteInputs);
-                if (discretes.Rows.Count != 2
-                    || Convert.ToInt32(discretes.Rows[1].Cells[0].Value, CultureInfo.InvariantCulture) != 10004
-                    || (string)discretes.Rows[1].Cells[1].Value != "ON")
-                {
-                    throw new InvalidOperationException("四区只读视图没有同步新增的离散输入数据。");
-                }
+                    foreach (SlaveArea area in Enum.GetValues<SlaveArea>())
+                    {
+                        if (!GetInitialDataGrid(dialog, area).ReadOnly)
+                        {
+                            throw new InvalidOperationException("运行数据明细的四个存储区必须全部只读。");
+                        }
+                    }
 
-                SavePage(dialog, Path.Combine(AppContext.BaseDirectory, "ui-smoke"), "16-运行数据只读明细.png");
-                dialog.DialogResult = DialogResult.Cancel;
-            });
+                    if (GetField<Button>(dialog, "_applyButton").Enabled
+                        || FindButton(dialog, "新增行") is not null
+                        || FindButton(dialog, "删除行") is not null
+                        || FindButton(dialog, "清空区域") is not null)
+                    {
+                        throw new InvalidOperationException("运行数据明细不能保留可编辑的入口。");
+                    }
+
+                    DataGridView grid = GetInitialDataGrid(dialog, SlaveArea.HoldingRegisters);
+                    if (grid.Rows.Count != 3
+                        || (string)grid.Rows[0].Cells[1].Value != "125"
+                        || (string)grid.Rows[1].Cells[1].Value != "20"
+                        || (string)grid.Rows[2].Cells[1].Value != "123")
+                    {
+                        throw new InvalidOperationException("运行明细没有显示新写入的地址和值。");
+                    }
+
+                    grid.CurrentCell = grid.Rows[1].Cells[1];
+                    manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0,
+                        Enumerable.Range(0, 1000).Select(index => (ushort)(index + 10)).ToArray());
+                    Application.DoEvents();
+                    grid.FirstDisplayedScrollingRowIndex = 300;
+                    int firstRow = grid.FirstDisplayedScrollingRowIndex;
+                    Task.Run(() =>
+                    {
+                        for (int value = 300; value <= 333; value++)
+                        {
+                            manager.WriteValues(unitId, SlaveArea.HoldingRegisters, 0, new ushort[] { (ushort)value });
+                        }
+
+                        manager.WriteValues(unitId, SlaveArea.DiscreteInputs, 3, OnValues);
+                    }).GetAwaiter().GetResult();
+                    Application.DoEvents();
+                    if (grid.Rows.Count != 1000 || (string)grid.Rows[0].Cells[1].Value != "333"
+                        || grid.FirstDisplayedScrollingRowIndex != firstRow
+                        || grid.CurrentCell?.RowIndex != 1)
+                    {
+                        throw new InvalidOperationException("打开的明细未动态更新，或刷新改变了查看位置。");
+                    }
+
+                    TabControl tabs = GetField<TabControl>(dialog, "_areaTabs");
+                    tabs.SelectedIndex = 3;
+                    DataGridView discretes = GetInitialDataGrid(dialog, SlaveArea.DiscreteInputs);
+                    if (discretes.Rows.Count != 2
+                        || Convert.ToInt32(discretes.Rows[1].Cells[0].Value, CultureInfo.InvariantCulture) != 10004
+                        || (string)discretes.Rows[1].Cells[1].Value != "ON")
+                    {
+                        throw new InvalidOperationException("四区只读视图没有同步新增的离散输入数据。");
+                    }
+
+                    SavePage(dialog, Path.Combine(AppContext.BaseDirectory, "ui-smoke"), "16-运行数据只读明细.png");
+                    dialog.DialogResult = DialogResult.Cancel;
+                });
+        }
+        finally
+        {
+            topMostCheck.Checked = topMostBefore;
+        }
         address.Value = 40001;
         if ((string)units.Rows[0].Cells[1].Value != initial)
         {
             throw new InvalidOperationException("查看运行数据后修改了原初始配置。");
         }
 
-        Console.WriteLine("已验证：停止 UI 定时器后，四区数据、新地址及后台连续写入仍即时同步；滚动与选中位置保持。");
+        Console.WriteLine(
+            "已验证：停止 UI 定时器后，四区数据、新地址及后台连续写入仍即时同步；"
+            + "滚动与选中位置保持；主窗体置顶时查看窗口同步置顶。");
     }
 
     private sealed class UiTimerPause : IDisposable

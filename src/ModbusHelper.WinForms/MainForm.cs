@@ -449,6 +449,16 @@ public sealed partial class MainForm : Form
         _uiActions.Enqueue(action);
     }
 
+    /// <summary>
+    /// 显示由主窗体拥有的模态窗口，并同步窗口置顶状态。
+    /// </summary>
+    private DialogResult ShowOwnedDialog(Form dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+        dialog.TopMost = TopMost;
+        return dialog.ShowDialog(this);
+    }
+
     private void OnUiTimerTick(object? sender, EventArgs e)
     {
         while (_uiActions.TryDequeue(out Action? action))

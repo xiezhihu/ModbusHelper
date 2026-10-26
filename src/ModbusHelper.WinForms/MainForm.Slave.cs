@@ -1143,7 +1143,7 @@ public sealed partial class MainForm
             _slaveRandomRules,
             _currentSlaveAddressBase,
             _slaveUnitEditors.Select(editor => editor.UnitId));
-        if (dialog.ShowDialog(this) != DialogResult.OK)
+        if (ShowOwnedDialog(dialog) != DialogResult.OK)
         {
             return;
         }
@@ -1405,7 +1405,7 @@ public sealed partial class MainForm
             _currentSlaveAddressBase,
             requestedArea ?? GetSlaveAreaFromColumn(_slaveUnitGrid.CurrentCell?.ColumnIndex ?? 1),
             listening ? _services.SlaveSimulationManager : null);
-        if (dialog.ShowDialog(this) != DialogResult.OK
+        if (ShowOwnedDialog(dialog) != DialogResult.OK
             || dialog.UpdatedConfiguration is not SlaveUnitConfiguration updated)
         {
             return;

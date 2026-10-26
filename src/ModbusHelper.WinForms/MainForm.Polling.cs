@@ -501,7 +501,7 @@ public sealed partial class MainForm
         using PointTableForm dialog = new(
             _configuration.Points,
             UiHelpers.GetSelectedValue(_addressBaseCombo, AddressBase.ZeroBased));
-        if (dialog.ShowDialog(this) != DialogResult.OK)
+        if (ShowOwnedDialog(dialog) != DialogResult.OK)
         {
             return;
         }

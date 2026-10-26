@@ -973,7 +973,7 @@ public sealed partial class MainForm
         using ByteOrderProbeForm form = new(
             _services.ByteOrderProbeService,
             UiHelpers.GetSelectedValue(_addressBaseCombo, AddressBase.ZeroBased));
-        if (form.ShowDialog(this) != DialogResult.OK)
+        if (ShowOwnedDialog(form) != DialogResult.OK)
         {
             return;
         }
